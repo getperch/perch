@@ -1,0 +1,29 @@
+{
+  "name": "@perch/ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
+    "@perch/core": "workspace:*",
+    "emoji-mart": "^5.6.0",
+    "react": "^18.3.0",
+    "react-markdown": "^9.0.1",
+    "react-syntax-highlighter": "^15.6.1",
+    "remark-gfm": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "react": "^18.3.0"
+  }
+}

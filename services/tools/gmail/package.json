@@ -1,0 +1,20 @@
+{
+  "name": "@perch/tool-gmail",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/handler.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.700.0",
+    "@aws-sdk/client-sts": "^3.700.0",
+    "sst": "^4.17.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.10.0"
+  }
+}

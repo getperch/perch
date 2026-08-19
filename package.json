@@ -1,0 +1,22 @@
+{
+  "name": "perch",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "sst:dev": "sst dev",
+    "sst:deploy": "sst deploy"
+  },
+  "devDependencies": {
+    "sst": "^4.17.1",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,68 @@
+name: Android debug build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here on purpose — this repo's package.json pins
+      # `"packageManager": "pnpm@9.15.0"`, and pnpm/action-setup@v4 auto-detects that. Passing an
+      # explicit version too (even one that looks equivalent, like "9.15") makes it error with
+      # "Multiple versions of pnpm specified" if the strings don't match exactly.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      # Pinned to match apps/desktop/src-tauri/gen/android/app/build.gradle.kts's compileSdk/
+      # targetSdk (36) and this project's NDK version, both verified locally — bump deliberately,
+      # not by letting `sdkmanager` pick "latest".
+      - name: Install Android SDK platform, build tools, and NDK
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+
+      - name: Add Rust Android targets
+        run: rustup target add aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Generate the Android Studio project
+        working-directory: apps/desktop
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
+          pnpm tauri android init
+
+      - name: Build debug APK
+        working-directory: apps/desktop
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
+          pnpm tauri android build --debug --target aarch64
+
+      - name: Locate APK
+        id: apk
+        run: |
+          path=$(find apps/desktop/src-tauri/gen/android -name "*.apk" -path "*debug*" | head -1)
+          echo "Found: $path"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perch-android-debug
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error

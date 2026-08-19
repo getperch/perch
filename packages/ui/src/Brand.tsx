@@ -1,0 +1,106 @@
+/**
+ * Perch brand mark — one bird from four flat shapes, no outlines (see `Perch Identity.dc.html`):
+ * the Iris wing is the agent at work, the Feather body is the workspace holding it, the Lagoon
+ * tail is the flight just finished, the Slate beak is the only sharp edge in the system.
+ *
+ * - `PerchMark`     — the full four-shape bird. Use at 40px and above.
+ * - `PerchGlyph`    — single silhouette in an Iris tile. Use below 40px (favicon, dense rails).
+ * - `PerchWordmark` — mark + "perch" set lowercase in Space Grotesk 600, tracked -5%.
+ *
+ * SVG paths are lifted verbatim from the identity file; the viewBox and matrix transform are its.
+ */
+import type { CSSProperties } from "react";
+import { font } from "./tokens.js";
+
+const VIEW_BOX = "0 0 118 131";
+const MATRIX = "matrix(0.180982 0 0 0.18144 -26.6044 -29.2119)";
+
+/** The one shape the bird collapses to below 40px. */
+const SILHOUETTE_D =
+  "M473.211 402.973C502.36 359.895 531.853 317.051 561.686 274.444L588.514 235.604C594.775 226.438 606.216 208.893 614.117 201.461C628.303 188.163 645.918 179.088 664.981 175.255C691.558 170.308 719.012 176.111 741.314 191.391C763.084 206.428 778.919 230.7 783.899 256.756C785.679 266.072 785.186 282.155 785.195 292.169L785.39 339.804L785.468 458.283C785.457 481.513 786.519 517.109 782.663 538.805C778.053 565.186 767.711 590.234 752.367 612.182C724.739 651.843 682.389 678.798 634.761 687.035C618.684 689.799 606.506 689.551 590.302 689.577L552.684 689.601L506.167 689.561C495.861 689.534 483.755 689.651 473.528 688.997L470.623 690.17L252.159 815.674C220.213 833.928 185.932 854.938 153.533 871.748L223.34 769.797C229.108 761.486 234.798 753.12 240.408 744.702C242.345 741.802 248.216 732.748 250.184 730.594C251.528 728.182 253.104 725.894 254.606 723.578C264.278 708.665 274.478 694.107 284.454 679.4L354.821 576.494L439.189 452.15C450.466 435.673 461.395 419.063 473.211 402.973Z";
+
+const BODY_D =
+  "M473.211 402.973C502.36 359.895 531.853 317.051 561.686 274.444L588.514 235.604C594.775 226.438 606.216 208.893 614.117 201.461C628.303 188.163 645.918 179.088 664.981 175.255C691.558 170.308 719.012 176.111 741.314 191.391C763.084 206.428 778.919 230.7 783.899 256.756C785.679 266.072 785.186 282.155 785.195 292.169L785.39 339.804L785.468 458.283C785.457 481.513 786.519 517.109 782.663 538.805C778.053 565.186 767.711 590.234 752.367 612.182C724.739 651.843 682.389 678.798 634.761 687.035C618.684 689.799 606.506 689.551 590.302 689.577L552.684 689.601L506.167 689.561C495.861 689.534 483.755 689.651 473.528 688.997C474.584 688.233 475.371 687.849 476.477 687.227C507.583 669.739 538.348 651.597 569.197 633.676L601.493 614.759C616.946 605.844 629.641 599.698 642.804 587.314C659.09 572.024 670.905 552.588 676.981 531.091C686.591 497.715 682.342 461.873 665.195 431.668C649.216 403.462 622.647 382.795 591.377 374.247C559.128 365.73 524.818 370.35 495.97 387.093C490.076 390.552 484.948 394.136 479.642 398.448C477.63 400.083 475.495 401.74 473.211 402.973Z";
+
+const BEAK_D =
+  "M620.455 268.173C638.491 267.757 657.105 268.066 675.213 268.051C697.41 267.907 719.608 267.942 741.805 268.159C730.207 284.626 718.412 300.954 706.425 317.139C698.111 328.703 689.706 340.201 681.212 351.633C673.63 342.776 665.819 330.93 658.773 321.18L620.455 268.173Z";
+
+const TAIL_D =
+  "M250.184 730.594C253.63 729.195 260.369 720.673 265.052 717.222C300.227 691.297 326.193 690.165 366.754 690.148L415.88 690.088C426.864 690.179 437.848 690.195 448.833 690.137C453.805 690.081 466.393 689.551 470.623 690.17L252.159 815.674C220.213 833.928 185.932 854.938 153.533 871.748L223.34 769.797C229.108 761.486 234.798 753.12 240.408 744.702C242.345 741.802 248.216 732.748 250.184 730.594Z";
+
+export function PerchMark({ size = 28, style }: { size?: number; style?: CSSProperties }) {
+  return (
+    <svg
+      width={size}
+      height={(size * 131) / 118}
+      viewBox={VIEW_BOX}
+      fill="none"
+      style={style}
+      role="img"
+      aria-label="Perch"
+    >
+      <path fill="#7D35EB" transform={MATRIX} d={SILHOUETTE_D} />
+      <path fill="#F3BE93" transform={MATRIX} d={BODY_D} />
+      <path fill="#413D4E" transform={MATRIX} d={BEAK_D} />
+      <path fill="#5DE3D0" transform={MATRIX} d={TAIL_D} />
+    </svg>
+  );
+}
+
+/** Single violet tile with the bird silhouette — for sizes below 40px. */
+export function PerchGlyph({ size = 28, style }: { size?: number; style?: CSSProperties }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.29),
+        background: "#7D35EB",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flex: "none",
+        ...style,
+      }}
+    >
+      <svg
+        width={size * 0.58}
+        height={(size * 0.58 * 131) / 118}
+        viewBox={VIEW_BOX}
+        fill="none"
+        role="img"
+        aria-label="Perch"
+      >
+        <path fill="#F7F5FA" transform={MATRIX} d={SILHOUETTE_D} />
+      </svg>
+    </div>
+  );
+}
+
+export function PerchWordmark({
+  size = 28,
+  onDark = false,
+  style,
+}: {
+  size?: number;
+  onDark?: boolean;
+  style?: CSSProperties;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: Math.round(size * 0.34), ...style }}>
+      <PerchMark size={size} />
+      <span
+        style={{
+          fontFamily: font.display,
+          fontWeight: 600,
+          fontSize: Math.round(size * 0.92),
+          letterSpacing: "-0.05em",
+          color: onDark ? "#F7F5FA" : "#413D4E",
+          lineHeight: 1,
+        }}
+      >
+        perch
+      </span>
+    </div>
+  );
+}

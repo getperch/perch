@@ -1,0 +1,17 @@
+{
+  "name": "@perch/tool-http-fetch",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/handler.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.10.0"
+  }
+}

@@ -1,0 +1,69 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;450;500;600&family=Geist+Mono:wght@400;500&display=swap");
+
+html,
+body,
+#root {
+  height: 100%;
+}
+html,
+body {
+  overflow-x: hidden;
+}
+body {
+  margin: 0;
+  background: #f7f5fa;
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  color: #413d4e;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: #7d35eb;
+  text-decoration: none;
+}
+a:hover {
+  color: #5c27be;
+  text-decoration: underline;
+}
+* {
+  box-sizing: border-box;
+}
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ws-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.ws-sb::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.ws-sb::-webkit-scrollbar-thumb {
+  background: #e4e1ec;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.ws-sb::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ws-hoverable {
+  transition: background-color 0.1s ease;
+}
+.ws-hoverable:hover {
+  background: #eeebf5;
+}
+.ws-hoverable-dark:hover {
+  background: #000000 !important;
+}
+button {
+  font-family: inherit;
+}
