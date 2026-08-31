@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Channel, Member, SkillDoc } from "@fizz/core";
+import type { Channel, Member, SkillDoc } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Card, SectionLabel } from "../primitives/Card.js";
 import { color, font, radius, avatarPalette } from "../tokens.js";
-import { monoFor, paletteFor } from "../utils.js";
+import { avatarColorsFor, monoFor } from "../utils.js";
 
 export type ToolOption = { name: string; desc: string; needsApproval: boolean };
 export type ModelOption = { id: string; name: string; sub: string; provider: string };
@@ -43,7 +43,7 @@ export type NewPersonDraft = {
   channelIds: string[];
 };
 
-const emptyAgentDraft = (channelIds: string[]): NewAgentDraft => ({
+const emptyAgentDraft = (channelIds: string[], modelId = ""): NewAgentDraft => ({
   name: "",
   handle: "",
   roleDescription: "",
@@ -51,7 +51,7 @@ const emptyAgentDraft = (channelIds: string[]): NewAgentDraft => ({
   instructions: "",
   toolNames: [],
   toolApprovalOverrides: {},
-  modelId: "",
+  modelId,
   triggerEnabled: {},
   postsInChannelIds: channelIds,
   dailySpendCapUsd: 12,
@@ -71,6 +71,7 @@ export function AddMemberScreen({
   members,
   availableTools,
   availableModels,
+  defaultModelId,
   templates,
   plugins,
   pluginQuery,
@@ -94,6 +95,8 @@ export function AddMemberScreen({
   members: Member[];
   availableTools: ToolOption[];
   availableModels: ModelOption[];
+  /** Workspace-level default model id — pre-selects the picker for a fresh agent draft. */
+  defaultModelId?: string;
   templates: PromptTemplate[];
   plugins?: PluginSummary[];
   pluginQuery?: string;
@@ -115,7 +118,7 @@ export function AddMemberScreen({
   const targetChannel = channels.find((c) => defaultChannelIds.includes(c.id));
   const existingCandidates = members.filter((m) => !targetChannel?.memberIds.includes(m.id));
   const [tab, setTab] = useState<"existing" | "person" | "agent">(existingCandidates.length > 0 ? "existing" : "agent");
-  const [agentDraft, setAgentDraft] = useState<NewAgentDraft>(() => emptyAgentDraft(defaultChannelIds));
+  const [agentDraft, setAgentDraft] = useState<NewAgentDraft>(() => emptyAgentDraft(defaultChannelIds, defaultModelId));
   const [personDraft, setPersonDraft] = useState<NewPersonDraft>(() => emptyPersonDraft(defaultChannelIds));
   const [pluginPickerOpen, setPluginPickerOpen] = useState(false);
   const [importUrlOpen, setImportUrlOpen] = useState(false);
@@ -182,7 +185,7 @@ export function AddMemberScreen({
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {existingCandidates.map((m) => {
-                  const pal = paletteFor(m.id);
+                  const pal = avatarColorsFor(m);
                   return (
                     <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px" }}>
                       <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={32} square={m.kind === "agent"} />

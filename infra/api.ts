@@ -12,27 +12,55 @@ export function makeApi(args: {
 }) {
   const { table, bus, auditBucket, auditQueue, agentPluginsBucket, agentRecordingsBucket, agentMemoryBucket } = args;
 
-  // The one OAuth client a human has to register by hand in Google Cloud Console (Desktop app
-  // type, Gmail API + Calendar API enabled) — see infra/README.md for the exact steps. This is
-  // deliberately NOT an `sst.Secret`/deploy-time value: a base deploy shouldn't require it (most
-  // workspaces may never touch Gmail/Calendar), so instead a workspace admin enters it at runtime
-  // via Settings → Integrations (`PUT /google-workspace/client`), which stores it as a
-  // workspace-scoped SSM SecureString — see services/api/src/google-oauth.ts's
-  // `googleOAuthClientSsmPath`. Every consumer below (the client-id endpoint, the connect
-  // endpoint, the gmail/calendar tools' token refresh) fails with a clear, visible error rather
-  // than silently proceeding until that's done.
-  //
-  // Each agent's Google Workspace refresh token lives at its own SSM SecureString path — see
-  // services/api/src/google-oauth.ts's `googleWorkspaceSsmPath` for the exact template this
-  // pattern has to match. Scoped by stage so dev/prod stages (and PR stages) never collide or see
-  // each other's connections; workspaceId/memberId are wildcarded since they're only known at
-  // request time, not at deploy time.
+  // Connectors (Settings → Connectors) let a workspace admin wire Perch up to a third-party
+  // product (Google Workspace today; more later). Each connector's credentials are entered at
+  // runtime — deliberately NOT `sst.Secret`/deploy-time values, since most workspaces never wire
+  // up a given connector — and stored as a per-workspace SSM SecureString at
+  // `/perch/${stage}/${ws}/connectors/${connectorId}/client` (see
+  // services/api/src/connector-config.ts). Connectors with a per-agent connect flow additionally
+  // store one token per (agent, connector) at
+  // `/perch/${stage}/${ws}/agents/${agent}/connectors/${connectorId}/token` (see
+  // services/api/src/google-oauth.ts). Scoped by stage so dev/prod/PR stages never collide;
+  // workspace/agent/connector segments are wildcarded since they're only known at request time.
   const accountId = aws.getCallerIdentityOutput({}).accountId;
   const region = aws.getRegionOutput({}).name;
-  const googleWorkspaceSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/fizz/${$app.stage}/*/agents/*/google-workspace-refresh-token`;
-  // The workspace-level OAuth client config (clientId/clientSecret JSON) — one per workspace, no
-  // `/agents/*/` segment, must match `googleOAuthClientSsmPath` exactly.
-  const googleOAuthClientSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/fizz/${$app.stage}/*/google-oauth-client`;
+  // Per-agent connector token: `/perch/${stage}/${ws}/agents/${agent}/connectors/${connectorId}/token`
+  // (see services/api/src/google-oauth.ts's `googleAgentTokenSsmPath`). Per-workspace connector
+  // client config: `/perch/${stage}/${ws}/connectors/${connectorId}/client` (see
+  // services/api/src/connector-config.ts's `connectorClientSsmPath`). workspaceId/agentId/
+  // connectorId are wildcarded — only known at request time.
+  const connectorAgentTokenSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/agents/*/connectors/*/token`;
+  const connectorClientSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/connectors/*/client`;
+
+  // -- Per-agent isolation of the connector token read ------------------------------------------
+  //
+  // `ToolGmail`/`ToolCalendar` are shared singleton Lambdas — every agent's gmail/calendar call
+  // runs the same function. A standing `ssm:GetParameter` grant on the wildcard
+  // `.../agents/*/connectors/*/token` pattern would let any one tool call read any agent's token.
+  // Static IAM on a shared role can't say "only for the agent this invocation is for", so instead
+  // the tool Lambdas hold NO SSM permission directly: each invocation calls `sts:AssumeRole` on
+  // this `ConnectorTokenReader` role, passing an inline session policy scoped to exactly the one
+  // parameter ARN for the `__agentId` on the event (see services/tools/gmail/src/google-token.ts).
+  // The base role below can read the whole family; the per-call session policy is what narrows each
+  // actual read to a single agent.
+  //
+  // Trust is the account root, not the tool roles by ARN — referencing the SST-generated tool role
+  // ARNs here would create a dependency cycle (role ⇄ function). The real gate is that ONLY the two
+  // tool Lambdas are granted `sts:AssumeRole` on this role (their `permissions` blocks below);
+  // nothing else in the account can assume it.
+  const connectorTokenReaderRole = new aws.iam.Role("ConnectorTokenReader", {
+    assumeRolePolicy: $jsonStringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Principal: { AWS: $interpolate`arn:aws:iam::${accountId}:root` }, Action: "sts:AssumeRole" }],
+    }),
+  });
+  new aws.iam.RolePolicy("ConnectorTokenReaderPolicy", {
+    role: connectorTokenReaderRole.id,
+    policy: $jsonStringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Action: ["ssm:GetParameter"], Resource: [connectorAgentTokenSsmArnPattern, connectorClientSsmArnPattern] }],
+    }),
+  });
 
   // One Lambda per tool grant a workspace agent can hold — see services/tools/*. Each runs in its
   // own Firecracker microVM in isolation, reached only as a Gateway target (see infra/gateway.ts) —
@@ -58,14 +86,25 @@ export function makeApi(args: {
   // Each of these calls out to Google's own APIs using the calling agent's own connected Google
   // account (see services/tools/gmail and services/tools/calendar's file comments) — no session
   // state between calls, so no `link: [table]` needed the way ToolBrowser has for its session
-  // cache. `STAGE` + the SSM permission below must match services/api/src/google-oauth.ts's path
-  // convention exactly.
+  // cache. `STAGE` + the session-policy ARN the handler builds from `ACCOUNT_ID`/`HOME_REGION`
+  // must match services/api/src/google-oauth.ts + connector-config.ts's path conventions exactly.
+  // No direct SSM grant — the token read goes through `ConnectorTokenReader` with a per-invocation
+  // session policy scoped to the calling agent's own parameter (see that role's comment above and
+  // services/tools/gmail/src/google-token.ts). `ACCOUNT_ID`/`HOME_REGION` let the handler build the
+  // exact parameter ARN for that session policy; `CONNECTOR_TOKEN_READER_ROLE_ARN` is the role to
+  // assume.
+  const toolConnectorEnv = {
+    STAGE: $app.stage,
+    HOME_REGION: region,
+    ACCOUNT_ID: accountId,
+    CONNECTOR_TOKEN_READER_ROLE_ARN: connectorTokenReaderRole.arn,
+  };
   const toolGmail = new sst.aws.Function(
     "ToolGmail",
     {
       handler: "services/tools/gmail/src/handler.handler",
-      environment: { STAGE: $app.stage, HOME_REGION: region },
-      permissions: [{ actions: ["ssm:GetParameter"], resources: [googleWorkspaceSsmArnPattern, googleOAuthClientSsmArnPattern] }],
+      environment: toolConnectorEnv,
+      permissions: [{ actions: ["sts:AssumeRole"], resources: [connectorTokenReaderRole.arn] }],
     },
     { provider: toolsProvider },
   );
@@ -73,8 +112,8 @@ export function makeApi(args: {
     "ToolCalendar",
     {
       handler: "services/tools/calendar/src/handler.handler",
-      environment: { STAGE: $app.stage, HOME_REGION: region },
-      permissions: [{ actions: ["ssm:GetParameter"], resources: [googleWorkspaceSsmArnPattern, googleOAuthClientSsmArnPattern] }],
+      environment: toolConnectorEnv,
+      permissions: [{ actions: ["sts:AssumeRole"], resources: [connectorTokenReaderRole.arn] }],
     },
     { provider: toolsProvider },
   );
@@ -111,9 +150,9 @@ export function makeApi(args: {
   // actually write sessions there.
   const browser = new aws.bedrock.AgentcoreBrowser("ToolBrowserResource", {
     // Unlike every other resource `name` in this repo, AgentcoreBrowser's `name` rejects hyphens
-    // — confirmed live: `ValidationException: Value 'fizz-robss-browser' at 'name' failed to
+    // — confirmed live: `ValidationException: Value 'perch-robss-browser' at 'name' failed to
     // satisfy constraint: Member must satisfy regular expression pattern: [a-zA-Z][a-zA-Z0-9_]{0,47}`.
-    name: `fizz_${$app.stage}_browser`,
+    name: `perch_${$app.stage}_browser`,
     description: "Browser sessions driven by ToolBrowser (services/tools/browser-agentcore)",
     executionRoleArn: browserRole.arn,
     networkConfiguration: { networkMode: "PUBLIC" },
@@ -233,12 +272,11 @@ export function makeApi(args: {
       AGENT_MEMORY_BUCKET_NAME: agentMemoryBucket.name,
       STAGE: $app.stage,
     },
-    // Scoped to exactly the per-agent Google Workspace refresh-token path convention and the
-    // workspace-level OAuth client config path (see services/api/src/google-oauth.ts) — this
-    // function can create/read/delete only those two parameter families, not arbitrary SSM
-    // parameters in the account.
+    // Scoped to exactly the per-workspace connector client config path and the per-agent connector
+    // token path (see services/api/src/connector-config.ts + google-oauth.ts) — this function can
+    // create/read/delete only those two parameter families, not arbitrary SSM parameters.
     permissions: [
-      { actions: ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter"], resources: [googleWorkspaceSsmArnPattern, googleOAuthClientSsmArnPattern] },
+      { actions: ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter"], resources: [connectorAgentTokenSsmArnPattern, connectorClientSsmArnPattern] },
       // `GET /models` lists the account's on-demand Bedrock models (services/api/src/routers/models.ts).
       // ListFoundationModels has no resource-level scoping, so it's `*`.
       { actions: ["bedrock:ListFoundationModels"], resources: ["*"] },

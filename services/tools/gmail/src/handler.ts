@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { getAccessToken } from "./google-token.js";
+import { getAccessToken, GMAIL_SCOPES } from "./google-token.js";
 
 /**
  * Reads/sends Gmail on behalf of one agent's own connected Google account — see
  * apps/desktop/src-tauri/src/google_workspace.rs (the desktop-side OAuth flow) and
- * services/api/src/routers/members.ts's `/agents/{memberId}/google-workspace/connect` (the
+ * services/api/src/routers/members.ts's `/agents/{memberId}/connectors/google-workspace/connect` (the
  * server-side token exchange + storage) for how the connection this tool reads gets created.
  * Each agent has its own independent connection; nothing here is shared/global.
  *
@@ -87,7 +87,8 @@ export const handler = async (rawEvent: unknown) => {
   console.log(`gmail: agent=${agentId} action=${input.action}`);
 
   try {
-    const accessToken = await getAccessToken(workspaceId, agentId);
+    const requiredScopes = input.action === "send" ? [GMAIL_SCOPES.send] : [GMAIL_SCOPES.readonly];
+    const accessToken = await getAccessToken(workspaceId, agentId, requiredScopes);
 
     if (input.action === "list_messages") {
       const params = new URLSearchParams({ maxResults: String(input.maxResults) });

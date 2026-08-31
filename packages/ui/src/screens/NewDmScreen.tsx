@@ -1,10 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import type { Member } from "@fizz/core";
+import type { Member } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
 import { CloseIcon, MenuIcon, PlusIcon, SendIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { mentionTokenFor, paletteFor } from "../utils.js";
+import { avatarColorsFor, mentionTokenFor } from "../utils.js";
 import { detectMention } from "./ChatScreen.js";
 
 type MentionState = { start: number; query: string; index: number };
@@ -121,7 +121,7 @@ export function NewDmScreen({
             }}
           >
             {candidates.map((m, i) => {
-              const pal = paletteFor(m.id);
+              const pal = avatarColorsFor(m);
               return (
                 <button
                   key={m.id}

@@ -1,4 +1,4 @@
-import type { Run, RunStep } from "@fizz/core";
+import type { Run, RunStep } from "@perch/core";
 import { Button } from "../primitives/Button.js";
 import { Card, SectionLabel } from "../primitives/Card.js";
 import { CodeBlock } from "../primitives/CodeBlock.js";

@@ -1,8 +1,8 @@
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import type { AgentMember, Run } from "@fizz/core";
-import { workspace as contract } from "@fizz/api-contract";
+import type { AgentMember, Run } from "@perch/core";
+import { workspace as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
@@ -56,8 +56,10 @@ workspaceApp.openapi(
     const existing = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `WORKSPACE#${ctx.workspaceId}`, sk: "META" } }));
     if (!existing.Item) throw new HTTPException(404, { message: `workspace ${ctx.workspaceId} not found` });
     const next = { ...existing.Item.workspace, ...patch };
+    // `defaultModel: ""` is the "clear it" signal from Settings — drop the key rather than storing a blank.
+    if (patch.defaultModel === "") delete next.defaultModel;
     await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `WORKSPACE#${ctx.workspaceId}`, sk: "META", workspace: next } }));
-    await emit(ctx, "workspace.updated", { approvalPolicy: next.approvalPolicy });
+    await emit(ctx, "workspace.updated", patch);
     return c.json(next);
   },
 );

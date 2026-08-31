@@ -1,7 +1,7 @@
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import type { Channel, Member, Message } from "@fizz/core";
-import { mentions as contract } from "@fizz/api-contract";
+import type { Channel, Member, Message } from "@perch/core";
+import { mentions as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";

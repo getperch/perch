@@ -9,5 +9,5 @@ export * as runs from "./runs.js";
 export * as workspace from "./workspace.js";
 export * as plugins from "./plugins.js";
 export * as knowledge from "./knowledge.js";
-export * as googleWorkspace from "./google-workspace.js";
+export * as connectors from "./connectors.js";
 export * from "./stream.js";

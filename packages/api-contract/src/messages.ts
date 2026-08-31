@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { channelId, memberId, message, messageId } from "@fizz/core";
+import { channelId, memberId, message, messageId } from "@perch/core";
 
 export const listMessagesInput = z.object({
   channelId,

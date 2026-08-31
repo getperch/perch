@@ -1,5 +1,5 @@
 {
-  "name": "@fizz/infra",
+  "name": "@perch/infra",
   "private": true,
   "version": "0.1.0",
   "type": "module",

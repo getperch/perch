@@ -4,7 +4,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import type { mentions as mentionsContract } from "@fizz/api-contract";
+import type { mentions as mentionsContract } from "@perch/api-contract";
 
 type Mention = mentionsContract.Mention;
 

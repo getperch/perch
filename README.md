@@ -1,4 +1,10 @@
-# fizz
+<p align="center">
+  <img src="assets/perch-logo.svg" alt="Perch" width="112" height="124" />
+</p>
+
+<h1 align="center">perch</h1>
+
+<p align="center"><em>For your flock of agents — the place they gather between flights, and the place you go to see what they brought back.</em></p>
 
 > **Warning: Experimental**
 >
@@ -18,7 +24,7 @@ See [`infra/README.md`](infra/README.md) for the data model, deploy steps, and a
 apps/desktop/       Tauri v2 + React desktop client (mobile targets added later, same codebase)
 packages/core/       Shared Zod schemas: Workspace, Channel, Member, Message, Run, Task, Approval, AuditEvent
 packages/api-contract/  REST endpoint input/output Zod schemas, shared by client and server
-packages/ui/          Design system ported from the Claude Design source, all six screens
+packages/ui/          Design system + Perch brand tokens (Claude Design source), all six screens
 services/api/         Hono REST API Lambda (channels/members/messages/tasks/approvals) + SSE stream Lambda
 services/agent-runtime/ Durable Execution SDK orchestrator + Strands agent loop
 services/tools/        One Lambda per tool grant (isolation boundary)
@@ -33,7 +39,7 @@ corepack enable
 pnpm install
 
 pnpm sst:dev        # deploys the AWS backend to your account, watches for changes
-pnpm --filter @fizz/desktop tauri dev   # in a second terminal
+pnpm --filter @perch/desktop tauri dev   # in a second terminal
 ```
 
 On first launch the desktop app shows a **Connect to your backend** screen — paste the API URL
@@ -43,7 +49,7 @@ different backend" on the sign-in screen clears that and starts over.
 
 Sign-in opens the system browser to an [OpenAuth](https://openauth.js.org) server mounted at
 `/auth` on that same API URL — no separate URL, no CloudFront, it's just another route on the
-REST API (see `infra/api.ts`) — and redirects back into the app via a `fizz://` deep link once
+REST API (see `infra/api.ts`) — and redirects back into the app via a `perch://` deep link once
 you're done. The client never sees a password directly.
 If the deep link doesn't fire (unreliable in some dev setups, e.g. `tauri dev` on Linux/WSL
 before the app is bundled/installed), the sign-in screen has a "paste the callback URL" fallback.
@@ -51,9 +57,11 @@ The **first** account to sign up bootstraps the workspace (becomes its own Membe
 after that is invite-gated — sign-up only succeeds for an email an admin already added via
 "Add member → Person".
 
-`apps/desktop/src-tauri/tauri.conf.json` references app icons that aren't generated yet — run
-`pnpm --filter @fizz/desktop tauri icon <path-to-a-1024x1024-png>` before building a release
-bundle (not needed for `tauri dev`).
+App icons for every platform (macOS `.icns`, Windows `.ico`, Linux PNGs, iOS `AppIcon-*`, Android
+`mipmap-*`) are committed under `apps/desktop/src-tauri/icons/`, generated from the Perch mark. To
+regenerate them after a brand change, edit the sources in `apps/desktop/src-tauri/`
+(`app-icon.svg`, `app-icon-android-fg.svg`, `app-icon.json`) and run
+`pnpm --filter @perch/desktop exec tauri icon src-tauri/app-icon.json`.
 
 ## Verifying it end to end
 

@@ -8,7 +8,7 @@ import { loadStoredBackendConfig, saveBackendConfig, type BackendConfig } from "
 import { completeSignIn } from "./lib/auth.js";
 import { api } from "./lib/api-client.js";
 import { pushToast } from "./lib/toasts.js";
-import "@fizz/ui/src/global.css";
+import "@perch/ui/src/global.css";
 
 function Root() {
   // undefined = still checking disk; null = nothing stored, needs the connect screen
@@ -41,19 +41,19 @@ function Providers({ config }: { config: BackendConfig }) {
   useEffect(() => {
     setReady(true);
 
-    // Two independent deep-link flows share the app-wide `fizz://` scheme (registered once in
+    // Two independent deep-link flows share the app-wide `perch://` scheme (registered once in
     // tauri.conf.json, not path-scoped) — branch on the callback URL's host to route each to its
-    // own completion command. `fizz://callback` is this app's own sign-in (auth.rs);
-    // `fizz://google-workspace-callback` is a per-agent Google Workspace connect
+    // own completion command. `perch://callback` is this app's own sign-in (auth.rs);
+    // `perch://google-workspace-callback` is a per-agent Google Workspace connect
     // (google_workspace.rs) started from AgentDetailScreen's "Connect Gmail & Calendar" button.
     const routeCallback = (url: string) => {
-      if (url.startsWith("fizz://google-workspace-callback")) {
+      if (url.startsWith("perch://google-workspace-callback")) {
         // Errors here surface as a toast rather than being swallowed the way completeSignIn's
         // are below — there's no "paste the callback URL" fallback screen for this flow, so a
         // silent failure would just look like the Connect button did nothing.
-        api.googleWorkspace
+        api.connectors
           .completeConnect(url)
-          .then(() => queryClient.invalidateQueries({ queryKey: ["googleWorkspace", "connection"] }))
+          .then(() => queryClient.invalidateQueries({ queryKey: ["connectors", "connection"] }))
           .catch((err: Error) => pushToast("error", err.message || "Couldn't connect Google Workspace"));
         return;
       }

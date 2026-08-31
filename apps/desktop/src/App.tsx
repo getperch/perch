@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
-import type { AgentConfig, ApprovalPolicy, ArtifactRef, Channel, Member, Message, SkillDoc, Task, TaskSource, ToolGrant, TriggerConfig } from "@fizz/core";
-import { pluginToAgentDraft } from "@fizz/core";
+import type { AgentConfig, ApprovalPolicy, ArtifactRef, Channel, Member, Message, SkillDoc, Task, TaskSource, ToolGrant, TriggerConfig } from "@perch/core";
+import { pluginToAgentDraft } from "@perch/core";
 import {
   AppShell,
   Sidebar,
@@ -17,6 +17,7 @@ import {
   RunDetailScreen,
   TasksScreen,
   SettingsScreen,
+  KnowledgeScreen,
   AgentDetailScreen,
   Dialog,
   ToastHost,
@@ -27,10 +28,12 @@ import {
   BellIcon,
   CheckSquareIcon,
   GridIcon,
+  DocumentIcon,
   SettingsIcon,
   type NavItem,
   type ImportedAgentDraft,
-} from "@fizz/ui";
+  type KnowledgeDraft,
+} from "@perch/ui";
 import { api } from "./lib/api-client.js";
 import { useAuth, signOut } from "./lib/auth.js";
 import { useChannelStream } from "./lib/stream.js";
@@ -47,6 +50,7 @@ type Screen =
   | { name: "add-member" }
   | { name: "run"; runId: string }
   | { name: "tasks" }
+  | { name: "knowledge" }
   | { name: "people" }
   | { name: "settings" }
   | { name: "agent"; memberId: string };
@@ -120,6 +124,8 @@ function Workspace() {
   });
   /** The unified "Add to workspace" modal, or null when closed. */
   const [addModal, setAddModal] = useState<null | "channel" | "people" | "agent">(null);
+  /** Concept path open in the Knowledge screen's detail pane. */
+  const [knowledgePath, setKnowledgePath] = useState<string>();
 
   const channels = useQuery({ queryKey: ["channels", "list"], queryFn: () => api.channels.list() });
   const members = useQuery({ queryKey: ["members", "list"], queryFn: () => api.members.list() });
@@ -132,6 +138,17 @@ function Workspace() {
   const spend = useQuery({ queryKey: ["workspace", "spend"], queryFn: () => api.workspace.getSpend() });
   const models = useQuery({ queryKey: ["models", "list"], queryFn: () => api.models.list() });
   const availableModels = models.data ?? DEFAULT_MODELS;
+
+  const knowledgeConcepts = useQuery({
+    queryKey: ["knowledge", "list"],
+    queryFn: () => api.knowledge.list(),
+    enabled: screen.name === "knowledge",
+  });
+  const knowledgeDoc = useQuery({
+    queryKey: ["knowledge", "doc", knowledgePath],
+    queryFn: () => api.knowledge.get(knowledgePath!),
+    enabled: screen.name === "knowledge" && !!knowledgePath,
+  });
 
   // A valid session whose Member record no longer exists (e.g. the workspace data was wiped) —
   // `GET /members/me` 404s with "current user not found". Nothing in the app can render without a
@@ -164,7 +181,7 @@ function Workspace() {
     queryFn: () => api.plugins.get(pluginSelection!.name, pluginSelection!.version),
     enabled: !!pluginSelection,
   });
-  const [importedPlugin, setImportedPlugin] = useState<{ manifest: import("@fizz/core").PluginManifest; skillMarkdown: string; additionalSkills?: Record<string, string> }>();
+  const [importedPlugin, setImportedPlugin] = useState<{ manifest: import("@perch/core").PluginManifest; skillMarkdown: string; additionalSkills?: Record<string, string> }>();
   const [importPluginError, setImportPluginError] = useState<string>();
   const importPluginUrl = useMutation({
     mutationFn: (url: string) => api.plugins.import(url),
@@ -199,36 +216,36 @@ function Workspace() {
 
   const agentDetailMemberId = screen.name === "agent" ? screen.memberId : undefined;
   const googleWorkspaceConnection = useQuery({
-    queryKey: ["googleWorkspace", "connection", agentDetailMemberId],
-    queryFn: () => api.googleWorkspace.getConnection(agentDetailMemberId!),
+    queryKey: ["connectors", "connection", agentDetailMemberId],
+    queryFn: () => api.connectors.getConnection(agentDetailMemberId!),
     enabled: !!agentDetailMemberId,
   });
   // Resolves once the system browser is opened, not once the flow completes — the connection
   // itself lands later via main.tsx's deep-link handler, which invalidates the query above once
-  // `fizz://google-workspace-callback` comes back.
+  // `perch://google-workspace-callback` comes back.
   const connectGoogleWorkspace = useMutation({
-    mutationFn: (memberId: string) => api.googleWorkspace.beginConnect(memberId),
+    mutationFn: (memberId: string) => api.connectors.beginConnect(memberId),
   });
   const disconnectGoogleWorkspace = useMutation({
-    mutationFn: (memberId: string) => api.googleWorkspace.disconnect(memberId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["googleWorkspace", "connection"] }),
+    mutationFn: (memberId: string) => api.connectors.disconnect(memberId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connectors", "connection"] }),
   });
 
-  // Backs the Settings screen's Google Workspace card — the one workspace-level OAuth client
-  // (distinct from each agent's own connection above), configured at runtime instead of a
+  // Backs the Settings → Connectors page — the per-workspace connector credentials (distinct from
+  // each agent's own per-connector connection above), configured at runtime instead of a
   // deploy-time `sst secret set`.
-  const googleWorkspaceStatus = useQuery({
-    queryKey: ["googleWorkspace", "status"],
-    queryFn: () => api.googleWorkspace.getStatus(),
+  const connectorsList = useQuery({
+    queryKey: ["connectors", "list"],
+    queryFn: () => api.connectors.list(),
     enabled: screen.name === "settings",
   });
-  const saveGoogleWorkspaceClient = useMutation({
-    mutationFn: (vars: { clientId: string; clientSecret: string }) => api.googleWorkspace.saveClient(vars.clientId, vars.clientSecret),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["googleWorkspace", "status"] }),
+  const saveConnectorConfig = useMutation({
+    mutationFn: (vars: { connectorId: string; values: Record<string, string> }) => api.connectors.saveConfig(vars.connectorId, vars.values),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connectors", "list"] }),
   });
-  const clearGoogleWorkspaceClient = useMutation({
-    mutationFn: () => api.googleWorkspace.clearClient(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["googleWorkspace", "status"] }),
+  const clearConnectorConfig = useMutation({
+    mutationFn: (connectorId: string) => api.connectors.clearConfig(connectorId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connectors", "list"] }),
   });
 
   const channelId = activeChannelId ?? channels.data?.find((c) => c.kind !== "direct")?.id;
@@ -330,11 +347,14 @@ function Workspace() {
   });
   const createAgent = useMutation({
     mutationFn: (vars: Parameters<typeof api.members.createAgent>[0]) => api.members.createAgent(vars),
-    onSuccess: () => {
+    onSuccess: (member) => {
+      // Seed the list so the agent screen finds the new member before the refetch lands,
+      // otherwise AgentDetailScreen renders null (blank) for a beat.
+      queryClient.setQueryData<Member[]>(["members", "list"], (prev) => (prev ? [...prev, member as Member] : prev));
       queryClient.invalidateQueries({ queryKey: ["members", "list"] });
       setAddMemberError(undefined);
       setAddModal(null);
-      setScreen({ name: "chat" });
+      setScreen({ name: "agent", memberId: member.id });
     },
     onError: (err: Error) => setAddMemberError(err.message),
   });
@@ -344,7 +364,8 @@ function Workspace() {
       queryClient.invalidateQueries({ queryKey: ["members", "list"] });
       setAddMemberError(undefined);
       setAddModal(null);
-      setScreen({ name: "chat" });
+      // Chat renders null when there's no channel yet (fresh workspace) — go Home instead.
+      setScreen(channelId ? { name: "chat" } : { name: "home" });
     },
     onError: (err: Error) => setAddMemberError(err.message),
   });
@@ -377,9 +398,32 @@ function Workspace() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace", "get"] }),
   });
   const updateSettings = useMutation({
-    mutationFn: (vars: { approvalPolicy?: ApprovalPolicy; maxStepsPerRun?: number; maxConcurrentRuns?: number; trustedPluginRegistries?: string[] }) =>
+    mutationFn: (vars: { name?: string; approvalPolicy?: ApprovalPolicy; maxStepsPerRun?: number; maxConcurrentRuns?: number; trustedPluginRegistries?: string[]; defaultModel?: string }) =>
       api.workspace.updateSettings(vars),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace", "get"] }),
+    onError: (err: Error) => pushToast("error", err.message || "Couldn't save workspace settings"),
+  });
+  const knowledgeAction = useMutation({
+    mutationFn: (
+      action:
+        | { kind: "verify"; path: string }
+        | { kind: "deprecate"; path: string }
+        | { kind: "save"; draft: KnowledgeDraft }
+        | { kind: "reindex" },
+    ): Promise<unknown> => {
+      if (action.kind === "verify") return api.knowledge.verify(action.path);
+      if (action.kind === "deprecate") return api.knowledge.deprecate(action.path);
+      if (action.kind === "save") return api.knowledge.put(action.draft);
+      return api.knowledge.reindex();
+    },
+    onSuccess: (_data, action) => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge", "list"] });
+      if (action.kind === "save") setKnowledgePath(action.draft.path);
+      const touched = action.kind === "save" ? action.draft.path : "path" in action ? action.path : undefined;
+      if (touched) queryClient.invalidateQueries({ queryKey: ["knowledge", "doc", touched] });
+      if (action.kind === "reindex") pushToast("info", "Knowledge index rebuilt");
+    },
+    onError: (err: Error) => pushToast("error", err.message || "Couldn't update knowledge"),
   });
   const createTask = useMutation({
     mutationFn: (vars: { channelId: string; ownerId: string; title: string; source: TaskSource; scheduleLabel?: string; detail?: string }) =>
@@ -392,19 +436,27 @@ function Workspace() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks", "list"] }),
   });
   const updateAgentTriggers = useMutation({
-    mutationFn: (vars: { memberId: string; triggers: TriggerConfig[] }) => api.members.updateAgent(vars.memberId, { triggers: vars.triggers }),
+    mutationFn: (vars: { memberId: string; triggers: TriggerConfig[] }) => api.members.updateAgent(vars.memberId, { config: { triggers: vars.triggers } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
   });
   const updateAgentTools = useMutation({
-    mutationFn: (vars: { memberId: string; tools: ToolGrant[] }) => api.members.updateAgent(vars.memberId, { tools: vars.tools }),
+    mutationFn: (vars: { memberId: string; tools: ToolGrant[] }) => api.members.updateAgent(vars.memberId, { config: { tools: vars.tools } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
   });
   const updateAgentModel = useMutation({
-    mutationFn: (vars: { memberId: string; model: string }) => api.members.updateAgent(vars.memberId, { model: vars.model as AgentConfig["model"] }),
+    mutationFn: (vars: { memberId: string; model: string }) => api.members.updateAgent(vars.memberId, { config: { model: vars.model as AgentConfig["model"] } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
   });
   const updateAgentSkills = useMutation({
-    mutationFn: (vars: { memberId: string; skills: SkillDoc[] }) => api.members.updateAgent(vars.memberId, { skills: vars.skills }),
+    mutationFn: (vars: { memberId: string; skills: SkillDoc[] }) => api.members.updateAgent(vars.memberId, { config: { skills: vars.skills } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
+  });
+  const updateAgentInstructions = useMutation({
+    mutationFn: (vars: { memberId: string; instructions: string }) => api.members.updateAgent(vars.memberId, { config: { instructions: vars.instructions } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
+  });
+  const updateAgentRoleDescription = useMutation({
+    mutationFn: (vars: { memberId: string; roleDescription: string }) => api.members.updateAgent(vars.memberId, { roleDescription: vars.roleDescription }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
   });
   const createChannel = useMutation({
@@ -512,6 +564,7 @@ function Workspace() {
     { key: "home", label: "Home", glyph: <HomeIcon size={15} /> },
     { key: "mentions", label: "Notifications", glyph: <BellIcon size={15} />, count: unreadMentions || undefined, accentCount: true },
     { key: "tasks", label: "Tasks", glyph: <CheckSquareIcon size={15} />, count: tasks.data?.filter((t: Task) => t.status !== "done").length },
+    { key: "knowledge", label: "Knowledge", glyph: <DocumentIcon size={15} stroke="currentColor" /> },
     { key: "canvases", label: "Canvases", glyph: <GridIcon size={15} /> },
     { key: "settings", label: "Settings", glyph: <SettingsIcon size={15} /> },
   ];
@@ -557,7 +610,7 @@ function Workspace() {
   };
 
   // The profile rail is a global surface, but the redesign runs Settings/People full-width.
-  const railAllowed = screen.name !== "settings" && screen.name !== "people";
+  const railAllowed = screen.name !== "settings" && screen.name !== "people" && screen.name !== "knowledge";
   const profileRail = selectedMember && railAllowed ? (
     <ProfileRail
       member={selectedMember}
@@ -629,7 +682,6 @@ function Workspace() {
             setScreen({ name: "chat" });
           }}
           onCreateChannel={() => setAddModal("channel")}
-          onToggleWorkspaceMenu={() => {}}
           dms={dms}
           activeDmId={screen.name === "chat" ? activeDirectId : undefined}
           onOpenDm={(id) => {
@@ -670,6 +722,7 @@ function Workspace() {
           return (
             <MentionsScreen
               mentions={mentions.data ?? []}
+              members={members.data ?? []}
               onOpenChannel={(id) => {
                 setActiveChannelId(id);
                 setScreen({ name: "chat" });
@@ -713,6 +766,7 @@ function Workspace() {
               members={members.data ?? []}
               availableTools={DEFAULT_TOOLS}
               availableModels={availableModels}
+              defaultModelId={workspace.data?.defaultModel}
               templates={DEFAULT_TEMPLATES}
               plugins={plugins.data ?? []}
               pluginQuery={pluginQuery}
@@ -825,6 +879,31 @@ function Workspace() {
           );
         }
 
+        if (screen.name === "knowledge") {
+          if (!workspace.data) return null;
+          const canCurate = currentUser.kind === "person" && (currentUser.role === "owner" || currentUser.role === "admin");
+          return (
+            <KnowledgeScreen
+              workspaceName={workspace.data.name}
+              concepts={knowledgeConcepts.data?.concepts ?? []}
+              conceptsLoading={knowledgeConcepts.isPending}
+              selectedPath={knowledgePath}
+              doc={knowledgeDoc.data}
+              docLoading={!!knowledgePath && knowledgeDoc.isPending}
+              canCurate={canCurate}
+              busy={knowledgeAction.isPending}
+              error={knowledgeAction.error?.message}
+              onSelect={(path) => setKnowledgePath(path)}
+              onVerify={(path) => knowledgeAction.mutate({ kind: "verify", path })}
+              onDeprecate={(path) => knowledgeAction.mutate({ kind: "deprecate", path })}
+              onSave={(draft) => knowledgeAction.mutate({ kind: "save", draft })}
+              onReindex={() => knowledgeAction.mutate({ kind: "reindex" })}
+              isNarrow={isNarrow}
+              onOpenSidebar={openSidebar}
+            />
+          );
+        }
+
         if (screen.name === "agent") {
           const agent = membersById[screen.memberId];
           if (!agent || agent.kind !== "agent") return null;
@@ -839,6 +918,8 @@ function Workspace() {
               availableModels={availableModels}
               modelSaving={updateAgentModel.isPending}
               skillsSaving={updateAgentSkills.isPending}
+              instructionsSaving={updateAgentInstructions.isPending}
+              roleDescriptionSaving={updateAgentRoleDescription.isPending}
               googleWorkspaceConnection={googleWorkspaceConnection.data}
               googleWorkspaceConnecting={connectGoogleWorkspace.isPending}
               googleWorkspaceDisconnecting={disconnectGoogleWorkspace.isPending}
@@ -848,6 +929,8 @@ function Workspace() {
               onSaveTools={(tools) => updateAgentTools.mutate({ memberId: agent.id, tools })}
               onSaveModel={(model) => updateAgentModel.mutate({ memberId: agent.id, model })}
               onSaveSkills={(skills) => updateAgentSkills.mutate({ memberId: agent.id, skills })}
+              onSaveInstructions={(instructions) => updateAgentInstructions.mutate({ memberId: agent.id, instructions })}
+              onSaveRoleDescription={(roleDescription) => updateAgentRoleDescription.mutate({ memberId: agent.id, roleDescription })}
               onConnectGoogleWorkspace={() => connectGoogleWorkspace.mutate(agent.id)}
               onDisconnectGoogleWorkspace={() => disconnectGoogleWorkspace.mutate(agent.id)}
             />
@@ -861,19 +944,22 @@ function Workspace() {
               initialSection={screen.name === "people" ? "people" : "general"}
               workspace={workspace.data}
               members={members.data ?? []}
+              availableModels={availableModels}
               spendCapSaving={updateSpendCap.isPending}
               spendCapError={updateSpendCap.error?.message}
               settingsSaving={updateSettings.isPending}
               settingsError={updateSettings.error?.message}
               onSpendCapChange={(usd) => updateSpendCap.mutate({ spendCapUsdPerDay: usd })}
+              onNameChange={(name) => updateSettings.mutate({ name })}
               onApprovalPolicyChange={(policy) => updateSettings.mutate({ approvalPolicy: policy })}
               onLimitsChange={(limits) => updateSettings.mutate(limits)}
+              onDefaultModelChange={(modelId) => updateSettings.mutate({ defaultModel: modelId })}
               onTrustedRegistriesChange={(hosts) => updateSettings.mutate({ trustedPluginRegistries: hosts })}
-              googleWorkspaceStatus={googleWorkspaceStatus.data}
-              googleWorkspaceSaving={saveGoogleWorkspaceClient.isPending || clearGoogleWorkspaceClient.isPending}
-              googleWorkspaceError={saveGoogleWorkspaceClient.error?.message ?? clearGoogleWorkspaceClient.error?.message}
-              onGoogleWorkspaceClientSave={(client) => saveGoogleWorkspaceClient.mutate(client)}
-              onGoogleWorkspaceClientClear={() => clearGoogleWorkspaceClient.mutate()}
+              connectors={connectorsList.data}
+              connectorsSaving={saveConnectorConfig.isPending || clearConnectorConfig.isPending}
+              connectorsError={connectorsList.error?.message ?? saveConnectorConfig.error?.message ?? clearConnectorConfig.error?.message}
+              onConnectorConfigSave={(connectorId, values) => saveConnectorConfig.mutate({ connectorId, values })}
+              onConnectorConfigClear={(connectorId) => clearConnectorConfig.mutate(connectorId)}
               onAddPeople={() => setAddModal("people")}
               onOpenMember={(id) => setSelectedMemberId(id)}
               onConfigureAgent={(id) => setScreen({ name: "agent", memberId: id })}

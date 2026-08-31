@@ -1,6 +1,6 @@
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
-import type { AgentMember, Approval, Citation, Message, Run, RunStep, Workspace } from "@fizz/core";
+import type { AgentMember, Approval, Citation, Message, Run, RunStep, Workspace } from "@perch/core";
 import { ddb, TABLE_NAME } from "./db.js";
 import { appendChannelEvent, emit } from "./events.js";
 

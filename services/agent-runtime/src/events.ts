@@ -1,8 +1,8 @@
 import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
-import type { AuditEventType } from "@fizz/core";
-import type { ChannelStreamEventInput } from "@fizz/api-contract";
+import type { AuditEventType } from "@perch/core";
+import type { ChannelStreamEventInput } from "@perch/api-contract";
 import { ddb, TABLE_NAME } from "./db.js";
 
 /** Mirrors services/api/src/events.ts — kept as a small local copy rather than a shared runtime

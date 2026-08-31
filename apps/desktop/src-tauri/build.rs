@@ -3,7 +3,7 @@ use std::{env, fs, path::Path};
 use typify::{TypeSpace, TypeSpaceSettings};
 
 /// Generates Rust request/response structs from `services/api/openapi.json` (committed, regenerated
-/// via `pnpm --filter @fizz/api generate-openapi` whenever a route's contract changes — see
+/// via `pnpm --filter @perch/api generate-openapi` whenever a route's contract changes — see
 /// infra/README.md). `@hono/zod-openapi` inlines every route's schema directly at its usage site
 /// (there's no `.openapi("Name")` call anywhere in services/api, so `components.schemas` is empty —
 /// confirmed by inspecting the generated doc) rather than emitting shared named components, so this

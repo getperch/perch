@@ -14,11 +14,11 @@ export function CreateChannelModal({
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
-  const [topic, setTopic] = useState("");
+  const [goal, setGoal] = useState("");
 
   const submit = () => {
     if (!name.trim()) return;
-    onCreate(name.trim(), topic.trim() || undefined);
+    onCreate(name.trim(), goal.trim() || undefined);
   };
 
   return (
@@ -46,12 +46,13 @@ export function CreateChannelModal({
           />
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: color.ink }}>Topic (optional)</span>
-          <input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="What's this channel for?"
-            style={{ height: 36, border: `1px solid ${color.borderStrong}`, borderRadius: radius.lg, padding: "0 12px", font: `400 14px ${font.sans}`, outline: "none", background: color.surface }}
+          <span style={{ fontSize: 12, fontWeight: 500, color: color.ink }}>Goal (optional)</span>
+          <textarea
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            rows={3}
+            placeholder="What this channel is for — agents in it are told this."
+            style={{ border: `1px solid ${color.borderStrong}`, borderRadius: radius.lg, padding: "8px 12px", font: `400 14px ${font.sans}`, outline: "none", background: color.surface, resize: "vertical" }}
           />
         </label>
         {error && <div style={{ fontSize: 12, color: color.statusDeclinedFg }}>{error}</div>}

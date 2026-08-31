@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { color, font, SettingsIcon, CloseIcon } from "@fizz/ui";
+import { color, font, PerchWordmark, SettingsIcon, CloseIcon } from "@perch/ui";
 import { beginSignIn, completeSignIn } from "./lib/auth.js";
 import { loadStoredBackendConfig } from "./lib/backend-config-store.js";
 
@@ -62,7 +62,8 @@ export function SignIn() {
           boxShadow: "0 24px 60px rgba(23,20,42,0.32)",
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Sign in to Fizz</div>
+        <PerchWordmark size={26} style={{ marginBottom: 2 }} />
+        <div style={{ fontSize: 16, fontWeight: 500, fontFamily: font.display, letterSpacing: "-0.02em" }}>Sign in</div>
         <div style={{ fontSize: 13, color: color.muted, marginTop: -6, marginBottom: 4, lineHeight: 1.55 }}>
           Opens your browser to sign in or register. New accounts only work for emails an admin has already added
           as a member.
@@ -101,7 +102,7 @@ export function SignIn() {
           >
             <div style={{ fontSize: 12, color: color.statusInProgressFg, lineHeight: 1.5 }}>
               After you finish in the browser, if nothing happens here, look at your browser's address bar for a
-              link starting with <code style={{ fontFamily: font.mono }}>fizz://callback</code> — copy it and paste
+              link starting with <code style={{ fontFamily: font.mono }}>perch://callback</code> — copy it and paste
               it below.
             </div>
             <form
@@ -114,7 +115,7 @@ export function SignIn() {
               <input
                 value={pastedUrl}
                 onChange={(e) => setPastedUrl(e.target.value)}
-                placeholder="fizz://callback?code=..."
+                placeholder="perch://callback?code=..."
                 style={{
                   height: 36,
                   border: `1px solid ${color.borderStrong}`,

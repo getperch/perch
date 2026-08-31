@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 type IconProps = { size?: number; stroke?: string; style?: CSSProperties };
 
-export function SearchIcon({ size = 13, stroke = "#6E6E66" }: IconProps) {
+export function SearchIcon({ size = 13, stroke = "#77778A" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.5}>
       <circle cx="7" cy="7" r="4.5" />
@@ -11,7 +11,7 @@ export function SearchIcon({ size = 13, stroke = "#6E6E66" }: IconProps) {
   );
 }
 
-export function ChevronDownIcon({ size = 14, stroke = "#6E6E66", style }: IconProps) {
+export function ChevronDownIcon({ size = 14, stroke = "#77778A", style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.5} style={style}>
       <path d="M4 6.5 8 10.5 12 6.5" />
@@ -19,7 +19,7 @@ export function ChevronDownIcon({ size = 14, stroke = "#6E6E66", style }: IconPr
   );
 }
 
-export function ChevronRightIcon({ size = 12, stroke = "#55554E", style }: IconProps) {
+export function ChevronRightIcon({ size = 12, stroke = "#413D4E", style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.7} style={style}>
       <path d="M6 3.5 10.5 8 6 12.5" />
@@ -27,7 +27,7 @@ export function ChevronRightIcon({ size = 12, stroke = "#55554E", style }: IconP
   );
 }
 
-export function PlusIcon({ size = 13, stroke = "#6E6E66" }: IconProps) {
+export function PlusIcon({ size = 13, stroke = "#77778A" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.6}>
       <path d="M8 3.5v9M3.5 8h9" />
@@ -35,7 +35,7 @@ export function PlusIcon({ size = 13, stroke = "#6E6E66" }: IconProps) {
   );
 }
 
-export function CloseIcon({ size = 10, stroke = "#6E6E66" }: IconProps) {
+export function CloseIcon({ size = 10, stroke = "#77778A" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={2}>
       <path d="M4 4l8 8M12 4l-8 8" />
@@ -51,7 +51,7 @@ export function CheckIcon({ size = 10, stroke = "#FCFCFB" }: IconProps) {
   );
 }
 
-export function PanelIcon({ size = 14, stroke = "#55554E" }: IconProps) {
+export function PanelIcon({ size = 14, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.5}>
       <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2" />
@@ -60,7 +60,7 @@ export function PanelIcon({ size = 14, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function CopyIcon({ size = 13, stroke = "#55554E" }: IconProps) {
+export function CopyIcon({ size = 13, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.4}>
       <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
@@ -69,7 +69,7 @@ export function CopyIcon({ size = 13, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function DocumentIcon({ size = 14, stroke = "#55554E" }: IconProps) {
+export function DocumentIcon({ size = 14, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.4}>
       <path d="M4 2h5.5L12 4.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" strokeLinejoin="round" />
@@ -88,7 +88,7 @@ export function AlertIcon({ size = 13, stroke = "oklch(0.38 0.16 264)" }: IconPr
   );
 }
 
-export function InboxIcon({ size = 22, stroke = "#6E6E66" }: IconProps) {
+export function InboxIcon({ size = 22, stroke = "#77778A" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.4}>
       <rect x="2.5" y="3.5" width="11" height="8" rx="2.5" />
@@ -97,7 +97,7 @@ export function InboxIcon({ size = 22, stroke = "#6E6E66" }: IconProps) {
   );
 }
 
-export function SmileIcon({ size = 14, stroke = "#55554E" }: IconProps) {
+export function SmileIcon({ size = 14, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.4}>
       <circle cx="8" cy="8" r="5.7" />
@@ -108,7 +108,7 @@ export function SmileIcon({ size = 14, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function EditIcon({ size = 13, stroke = "#55554E" }: IconProps) {
+export function EditIcon({ size = 13, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.4}>
       <path d="M10.5 2.9 13.1 5.5 5.1 13.5H2.5V10.9Z" strokeLinejoin="round" />
@@ -117,7 +117,7 @@ export function EditIcon({ size = 13, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function TrashIcon({ size = 13, stroke = "#55554E" }: IconProps) {
+export function TrashIcon({ size = 13, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.4}>
       <path d="M3 4.5h10M6.3 4.5V3a1 1 0 0 1 1-1h1.4a1 1 0 0 1 1 1v1.5" strokeLinecap="round" />
@@ -126,7 +126,7 @@ export function TrashIcon({ size = 13, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function MenuIcon({ size = 16, stroke = "#55554E" }: IconProps) {
+export function MenuIcon({ size = 16, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.5}>
       <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" strokeLinecap="round" />
@@ -134,7 +134,7 @@ export function MenuIcon({ size = 16, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function ThumbsUpIcon({ size = 15, stroke = "#55554E" }: IconProps) {
+export function ThumbsUpIcon({ size = 15, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.3}>
       <path d="M2.5 7h2.3v6.5H2.5z" strokeLinejoin="round" />
@@ -143,7 +143,7 @@ export function ThumbsUpIcon({ size = 15, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function HeartIcon({ size = 15, stroke = "#55554E" }: IconProps) {
+export function HeartIcon({ size = 15, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.3}>
       <path d="M8 13.2 2.6 8.1a3 3 0 0 1 4.5-3.9L8 5.1l.9-.9a3 3 0 0 1 4.5 3.9Z" strokeLinejoin="round" strokeLinecap="round" />
@@ -151,7 +151,7 @@ export function HeartIcon({ size = 15, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function LaughIcon({ size = 15, stroke = "#55554E" }: IconProps) {
+export function LaughIcon({ size = 15, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.3}>
       <circle cx="8" cy="8" r="5.7" />
@@ -161,7 +161,7 @@ export function LaughIcon({ size = 15, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function PartyIcon({ size = 15, stroke = "#55554E" }: IconProps) {
+export function PartyIcon({ size = 15, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.3}>
       <path d="M4 12 10.5 5.5 12.5 7.5 6 14Z" strokeLinejoin="round" />
@@ -171,7 +171,7 @@ export function PartyIcon({ size = 15, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function EyesIcon({ size = 15, stroke = "#55554E" }: IconProps) {
+export function EyesIcon({ size = 15, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.3}>
       <circle cx="4.6" cy="8" r="2.6" />
@@ -182,7 +182,7 @@ export function EyesIcon({ size = 15, stroke = "#55554E" }: IconProps) {
   );
 }
 
-export function RocketIcon({ size = 15, stroke = "#55554E" }: IconProps) {
+export function RocketIcon({ size = 15, stroke = "#413D4E" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={stroke} strokeWidth={1.3}>
       <path d="M8 2c1.8 1.1 2.9 3.2 2.9 6 0 1.3-.3 2.4-.7 3.2H5.8c-.4-.8-.7-1.9-.7-3.2C5.1 5.2 6.2 3.1 8 2Z" strokeLinejoin="round" />
@@ -282,7 +282,7 @@ export function LockIcon({ size = 14, stroke = "currentColor" }: IconProps) {
   );
 }
 
-export function HandoffIcon({ size = 15, stroke = "#8A8A93" }: IconProps) {
+export function HandoffIcon({ size = 15, stroke = "#8A8A99" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth={1.6} strokeLinecap="round">
       <path d="M4 8h13l-3-3M20 16H7l3 3" />

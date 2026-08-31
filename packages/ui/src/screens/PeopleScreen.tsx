@@ -1,10 +1,10 @@
-import type { Channel, Member } from "@fizz/core";
+import type { Channel, Member } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Pill } from "../primitives/Pill.js";
 import { MenuIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor } from "../utils.js";
+import { avatarColorsFor, paletteFor } from "../utils.js";
 
 const TEMPLATE_CARDS = [
   { name: "Daily digest", mono: "DD", desc: "Summarises the night, flags what needs a human." },
@@ -58,7 +58,7 @@ export function PeopleScreen({
             <span>Member</span><span>Type</span><span>Access</span><span>Status</span>
           </div>
           {members.map((m) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             const isAgent = m.kind === "agent";
             return (
               <button

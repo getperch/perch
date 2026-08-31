@@ -1,6 +1,6 @@
 import { InterventionActions, InterventionHandler, type BeforeToolCallEvent, type AfterToolCallEvent, type ToolResultBlock } from "@strands-agents/sdk";
 import type { workflow } from "sst/aws/workflow";
-import type { Run, ToolGrant } from "@fizz/core";
+import type { Run, ToolGrant } from "@perch/core";
 import { appendRunStep, createApproval, postMessage } from "./persist.js";
 
 type DurableContext = workflow.Context;
@@ -137,10 +137,16 @@ export class ApprovalInterventionHandler extends InterventionHandler {
     if (!event.error && !wasDenied) {
       const grant = this.grantsByToolName.get(event.toolUse.name);
       const ms = started !== undefined ? Date.now() - started : 0;
+      // Drop the reserved `__`-prefixed keys injectReservedContext added (`__workspaceId`,
+      // `__agentId`, `__runId`) — internal routing context, not model args, and this `detail`
+      // string is persisted to the run log and shown in the UI.
+      const modelArgs = isRecord(event.toolUse.input)
+        ? Object.fromEntries(Object.entries(event.toolUse.input).filter(([k]) => !k.startsWith("__")))
+        : event.toolUse.input;
       await appendRunStep(this.run, {
         kind: "tool_call",
         name: grant?.toolName ?? event.toolUse.name,
-        detail: JSON.stringify(event.toolUse.input).slice(0, 200),
+        detail: JSON.stringify(modelArgs).slice(0, 200),
         durationMs: ms,
         startedAt: new Date(started ?? Date.now()).toISOString(),
         recordingUrl: extractRecordingUrl(event.result),

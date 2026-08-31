@@ -61,7 +61,7 @@ const client = new BedrockAgentCoreClient({ region: process.env.HOME_REGION });
 const BROWSER_IDENTIFIER = process.env.AGENTCORE_BROWSER_ID ?? "";
 
 async function startSession(): Promise<{ sessionId: string; wsEndpoint: string }> {
-  const res = await client.send(new StartBrowserSessionCommand({ browserIdentifier: BROWSER_IDENTIFIER, name: "fizz-agent-run" }));
+  const res = await client.send(new StartBrowserSessionCommand({ browserIdentifier: BROWSER_IDENTIFIER, name: "perch-agent-run" }));
   const wsEndpoint = res.streams?.automationStream?.streamEndpoint;
   if (!res.sessionId || !wsEndpoint) throw new Error("AgentCore did not return a session id / automation stream endpoint");
   return { sessionId: res.sessionId, wsEndpoint };

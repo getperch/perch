@@ -1,5 +1,5 @@
 {
-  "name": "@fizz/api",
+  "name": "@perch/api",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -18,8 +18,8 @@
     "@aws-sdk/lib-dynamodb": "^3.700.0",
     "@openauthjs/openauth": "^0.4.3",
     "@hono/zod-openapi": "^1.6.0",
-    "@fizz/api-contract": "workspace:*",
-    "@fizz/core": "workspace:*",
+    "@perch/api-contract": "workspace:*",
+    "@perch/core": "workspace:*",
     "hono": "^4.6.0",
     "sst": "^4.17.1",
     "ulid": "^2.3.0",

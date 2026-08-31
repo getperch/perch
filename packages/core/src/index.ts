@@ -2,6 +2,8 @@ export * from "./ids.js";
 export * from "./workspace.js";
 export * from "./channel.js";
 export * from "./member.js";
+export * from "./google-workspace.js";
+export * from "./connector.js";
 export * from "./message.js";
 export * from "./run.js";
 export * from "./task.js";

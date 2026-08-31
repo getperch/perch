@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { invoke } from "@tauri-apps/api/core";
-import { channels, members, mentions, models, messages, tasks, approvals, runs, workspace, plugins, googleWorkspace } from "@fizz/api-contract";
+import { channels, members, mentions, models, messages, tasks, approvals, runs, workspace, plugins, knowledge, connectors } from "@perch/api-contract";
 import { signOut } from "./auth.js";
 import { pushToast } from "./toasts.js";
 
@@ -66,8 +66,8 @@ export const api = {
       invokeApi("members_create_person", { input }, members.createPersonOutput),
     createAgent: (input: Body<typeof members.createAgentInput, "workspaceId">) =>
       invokeApi("members_create_agent", { input }, members.createAgentOutput),
-    updateAgent: (memberId: string, config: z.infer<typeof members.updateAgentInput>["config"]) =>
-      invokeApi("members_update_agent", { memberId, config }, members.updateAgentOutput),
+    updateAgent: (memberId: string, patch: Body<typeof members.updateAgentInput, "memberId">) =>
+      invokeApi("members_update_agent", { memberId, patch }, members.updateAgentOutput),
     delete: (memberId: string) => invokeApi("members_delete", { memberId }, members.deleteMemberOutput),
   },
   mentions: {
@@ -101,24 +101,35 @@ export const api = {
     publish: (memberId: string) => invokeApi("plugins_publish", { input: { memberId } }, plugins.publishOutput),
     import: (url: string) => invokeApi("plugins_import", { input: { url } }, plugins.importOutput),
   },
+  knowledge: {
+    list: () => invokeApi("knowledge_list", {}, knowledge.listOutput),
+    get: (path: string) => invokeApi("knowledge_get", { path }, knowledge.getOutput),
+    put: (input: z.infer<typeof knowledge.putInput>) => invokeApi("knowledge_put", { input }, knowledge.putOutput),
+    deprecate: (path: string) => invokeApi("knowledge_deprecate", { input: { path } }, knowledge.deleteOutput),
+    verify: (path: string) => invokeApi("knowledge_verify", { input: { path } }, knowledge.verifyOutput),
+    reindex: () => invokeApi("knowledge_reindex", {}, knowledge.reindexOutput),
+  },
   artifacts: {
     getContent: (url: string) => invokeApi("artifacts_get_content", { url }, z.string()),
   },
-  googleWorkspace: {
-    /** Fetches the OAuth client id and opens the system browser to Google's consent screen for
-     * `memberId` — resolves once the browser is opened, not once the flow completes (see
-     * `completeGoogleConnect`, driven by the `fizz://google-workspace-callback` deep link). */
+  connectors: {
+    /** Backs the Settings → Connectors page: every connector Perch supports plus this workspace's
+     * current config state for each. Secrets are never returned. */
+    list: () => invokeApi("connector_list", {}, connectors.listConnectorsOutput),
+    /** Enter/update one connector's workspace-level credentials. `values` keys are validated
+     * server-side against that connector's declared fields. */
+    saveConfig: (connectorId: string, values: Record<string, string>) =>
+      invokeApi("connector_save_config", { connectorId, input: { values } }, connectors.putConnectorConfigOutput),
+    clearConfig: (connectorId: string) => invokeApi("connector_clear_config", { connectorId }, connectors.deleteConnectorConfigOutput),
+
+    /** Per-agent Google Workspace connect flow — opens the system browser to Google's consent
+     * screen for `memberId`; resolves once the browser is opened, not once the flow completes
+     * (see `completeConnect`, driven by the `perch://google-workspace-callback` deep link). */
     beginConnect: (memberId: string) => invokeApi("begin_google_connect", { memberId }, z.void()),
     /** Finishes the flow once the deep link routes back into the app (see main.tsx) — the Rust
      * side does the token exchange with the backend and returns the connected email. */
-    completeConnect: (callbackUrl: string) => invokeApi("complete_google_connect", { callbackUrl }, googleWorkspace.connectOutput),
-    getConnection: (memberId: string) => invokeApi("google_workspace_get_connection", { memberId }, googleWorkspace.getConnectionOutput),
-    disconnect: (memberId: string) => invokeApi("disconnect_google_workspace", { memberId }, googleWorkspace.disconnectOutput),
-    /** Backs the Settings screen's Google Workspace card — the one workspace-level OAuth client,
-     * configured at runtime rather than via `sst secret set`. */
-    getStatus: () => invokeApi("google_workspace_get_client_status", {}, googleWorkspace.getClientStatusOutput),
-    saveClient: (clientId: string, clientSecret: string) =>
-      invokeApi("google_workspace_save_client", { input: { clientId, clientSecret } }, googleWorkspace.putClientOutput),
-    clearClient: () => invokeApi("google_workspace_clear_client", {}, googleWorkspace.deleteClientOutput),
+    completeConnect: (callbackUrl: string) => invokeApi("complete_google_connect", { callbackUrl }, connectors.connectOutput),
+    getConnection: (memberId: string) => invokeApi("google_workspace_get_connection", { memberId }, connectors.getConnectionOutput),
+    disconnect: (memberId: string) => invokeApi("disconnect_google_workspace", { memberId }, connectors.disconnectOutput),
   },
 };

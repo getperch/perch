@@ -2,8 +2,8 @@ import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/li
 import { ulid } from "ulid";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { channelId, memberId } from "@fizz/core";
-import { channels as contract } from "@fizz/api-contract";
+import { channelId, memberId } from "@perch/core";
+import { channels as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";

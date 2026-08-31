@@ -4,10 +4,11 @@ import { AgentBadge } from "../primitives/AgentBadge.js";
 import { SegmentedControl } from "../primitives/SegmentedControl.js";
 import { MenuIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor, relativeTime, segmentText } from "../utils.js";
+import type { Member } from "@perch/core";
+import { avatarColorsFor, relativeTime, segmentText } from "../utils.js";
 
-/** Structural mirror of `@fizz/api-contract`'s `Mention` — kept local so `@fizz/ui` stays
- * decoupled from the contract package (it only depends on `@fizz/core`). */
+/** Structural mirror of `@perch/api-contract`'s `Mention` — kept local so `@perch/ui` stays
+ * decoupled from the contract package (it only depends on `@perch/core`). */
 export type Mention = {
   messageId: string;
   channelId: string;
@@ -25,16 +26,20 @@ type Filter = "all" | "unread" | "mentions";
 
 export function MentionsScreen({
   mentions,
+  members,
   onOpenChannel,
   isNarrow,
   onOpenSidebar,
 }: {
   mentions: Mention[];
+  /** Workspace members, so each row's avatar can use the author's persisted color. */
+  members: Member[];
   onOpenChannel: (channelId: string) => void;
   isNarrow?: boolean;
   onOpenSidebar?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const membersById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const unread = mentions.filter((m) => m.unread).length;
   // Every row in this feed is already an @mention of the current user, so "All" and "Mentions"
   // show the same set today; "Unread" narrows to the last-24h heuristic.
@@ -71,7 +76,7 @@ export function MentionsScreen({
       <div className="ws-sb" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 0 24px" }}>
         <div style={{ maxWidth: 800, padding: "0 22px", display: "flex", flexDirection: "column", gap: 8 }}>
           {shown.map((m) => {
-            const pal = m.authorId ? paletteFor(m.authorId) : paletteFor(m.authorName);
+            const pal = avatarColorsFor(m.authorId ? membersById[m.authorId] : undefined, m.authorId ?? m.authorName);
             return (
               <button
                 key={m.messageId}
@@ -98,7 +103,7 @@ export function MentionsScreen({
                     <span style={{ flex: 1 }} />
                     {m.unread && <span style={{ width: 7, height: 7, borderRadius: 5, background: color.accent }} />}
                   </div>
-                  <div style={{ fontSize: 13.5, color: "#33333B", lineHeight: 1.55 }}>
+                  <div style={{ fontSize: 13.5, color: "#413D4E", lineHeight: 1.55 }}>
                     {segmentText(m.text).map((p, i) =>
                       p.kind === "mention" ? (
                         <span key={i} style={{ background: color.accentTint, color: color.accentText, fontWeight: 500, padding: "1px 5px", borderRadius: 4 }}>

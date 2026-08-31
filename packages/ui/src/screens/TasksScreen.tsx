@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
-import type { AgentMember, Channel, Member, Task, TaskSource, TriggerConfig } from "@fizz/core";
+import type { AgentMember, Channel, Member, Task, TaskSource, TriggerConfig } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Pill } from "../primitives/Pill.js";
 import { MenuIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor } from "../utils.js";
+import { avatarColorsFor } from "../utils.js";
 
 const statusPill: Record<Task["status"], { bg: string; fg: string; label: string }> = {
   open: { bg: color.statusOpenBg, fg: color.statusOpenFg, label: "Open" },
@@ -228,7 +228,7 @@ export function TasksScreen({
 
           <div style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.lg, overflow: "hidden" }}>
             {schedules.map((row) => {
-              const pal = paletteFor(row.agentId);
+              const pal = avatarColorsFor(row.agent);
               return (
                 <div key={`${row.agentId}-${row.index}`} style={{ padding: "16px 20px", borderBottom: `1px solid ${color.border}`, background: row.trigger.enabled ? color.surface : color.surfaceMuted }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
@@ -288,7 +288,7 @@ export function TasksScreen({
             {filtered.map((t) => {
               const owner = membersById[t.ownerId];
               const openedBy = t.openedById ? membersById[t.openedById] : undefined;
-              const pal = owner ? paletteFor(owner.id) : paletteFor("?");
+              const pal = avatarColorsFor(owner);
               const st = statusPill[t.status];
               const done = t.status === "done";
               return (

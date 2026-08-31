@@ -10,8 +10,8 @@ use url::Url;
 
 use crate::store;
 
-const CLIENT_ID: &str = "fizz-desktop";
-const REDIRECT_URI: &str = "fizz://callback";
+const CLIENT_ID: &str = "perch-desktop";
+const REDIRECT_URI: &str = "perch://callback";
 
 /// Holds the PKCE verifier between `begin_sign_in` opening the browser and `complete_sign_in`
 /// finishing the exchange — mirrors the JS module-level `pendingVerifier` this replaces. In-memory
@@ -57,7 +57,7 @@ struct TokenResponse {
     refresh_token: String,
 }
 
-/// Finishes the flow once the `fizz://callback?code=...` URL comes back (via the deep-link plugin,
+/// Finishes the flow once the `perch://callback?code=...` URL comes back (via the deep-link plugin,
 /// or a manually pasted URL as a fallback — see `apps/desktop/src/lib/auth.ts`'s
 /// `completeSignIn`). Matches `@openauthjs/openauth/client`'s `exchange()` wire format: one
 /// `POST {api_url}/auth/token`, `application/x-www-form-urlencoded`.

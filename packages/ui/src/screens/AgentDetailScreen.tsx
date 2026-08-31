@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AgentMember, SkillDoc, ToolGrant } from "@fizz/core";
+import type { AgentMember, SkillDoc, ToolGrant } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Card, SectionLabel } from "../primitives/Card.js";
@@ -26,6 +26,8 @@ export function AgentDetailScreen({
   availableModels,
   modelSaving,
   skillsSaving,
+  instructionsSaving,
+  roleDescriptionSaving,
   googleWorkspaceConnection,
   googleWorkspaceConnecting,
   googleWorkspaceDisconnecting,
@@ -35,6 +37,8 @@ export function AgentDetailScreen({
   onSaveTools,
   onSaveModel,
   onSaveSkills,
+  onSaveInstructions,
+  onSaveRoleDescription,
   onConnectGoogleWorkspace,
   onDisconnectGoogleWorkspace,
 }: {
@@ -47,6 +51,8 @@ export function AgentDetailScreen({
   availableModels: ModelOption[];
   modelSaving?: boolean;
   skillsSaving?: boolean;
+  instructionsSaving?: boolean;
+  roleDescriptionSaving?: boolean;
   googleWorkspaceConnection?: GoogleWorkspaceConnection;
   googleWorkspaceConnecting?: boolean;
   googleWorkspaceDisconnecting?: boolean;
@@ -56,6 +62,8 @@ export function AgentDetailScreen({
   onSaveTools: (tools: ToolGrant[]) => void;
   onSaveModel: (model: string) => void;
   onSaveSkills: (skills: SkillDoc[]) => void;
+  onSaveInstructions: (instructions: string) => void;
+  onSaveRoleDescription: (roleDescription: string) => void;
   onConnectGoogleWorkspace?: () => void;
   onDisconnectGoogleWorkspace?: () => void;
 }) {
@@ -106,6 +114,30 @@ export function AgentDetailScreen({
     setEditingSkills(false);
   };
 
+  const [editingInstructions, setEditingInstructions] = useState(false);
+  const [instructionsDraft, setInstructionsDraft] = useState(agent.config.instructions);
+  const startEditingInstructions = () => {
+    setInstructionsDraft(agent.config.instructions);
+    setEditingInstructions(true);
+  };
+  const saveInstructions = () => {
+    const next = instructionsDraft.trim();
+    if (next && next !== agent.config.instructions) onSaveInstructions(next);
+    setEditingInstructions(false);
+  };
+
+  const [editingRole, setEditingRole] = useState(false);
+  const [roleDraft, setRoleDraft] = useState(agent.roleDescription);
+  const startEditingRole = () => {
+    setRoleDraft(agent.roleDescription);
+    setEditingRole(true);
+  };
+  const saveRole = () => {
+    const next = roleDraft.trim();
+    if (next && next !== agent.roleDescription) onSaveRoleDescription(next);
+    setEditingRole(false);
+  };
+
   return (
     <div className="ws-sb" style={{ flex: 1, minHeight: 0, overflowY: "auto", background: color.surfaceMuted }}>
       <header style={{ height: 56, position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", gap: 12, padding: "0 20px", background: color.surface, borderBottom: `1px solid ${color.border}` }}>
@@ -123,16 +155,73 @@ export function AgentDetailScreen({
         <Card>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <Avatar mono={agent.mono} bg={agent.colorBg} fg={agent.colorFg} size={56} square />
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 700 }}>{agent.name}</div>
-              <div style={{ fontSize: 12, color: color.muted }}>@{agent.handle} · {agent.roleDescription}</div>
+              {editingRole ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: color.muted, flex: "none" }}>@{agent.handle} ·</span>
+                  <input
+                    autoFocus
+                    value={roleDraft}
+                    onChange={(e) => setRoleDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveRole();
+                      if (e.key === "Escape") setEditingRole(false);
+                    }}
+                    placeholder="What this agent does"
+                    style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                  />
+                  <Button variant="primary" disabled={roleDescriptionSaving || !roleDraft.trim()} onClick={saveRole}>
+                    {roleDescriptionSaving ? "Saving…" : "Save"}
+                  </Button>
+                  <Button variant="secondary" disabled={roleDescriptionSaving} onClick={() => setEditingRole(false)}>Cancel</Button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                  <span style={{ fontSize: 12, color: color.muted, overflow: "hidden", textOverflow: "ellipsis" }}>@{agent.handle} · {agent.roleDescription}</span>
+                  <button
+                    onClick={startEditingRole}
+                    className="ws-hoverable"
+                    style={{ flex: "none", background: "none", border: "none", padding: "2px 4px", borderRadius: radius.sm, font: `500 12px ${font.sans}`, color: color.accent, cursor: "pointer" }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </Card>
 
         <Card>
-          <SectionLabel>Instructions</SectionLabel>
-          <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{agent.config.instructions}</div>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+            <SectionLabel>Instructions</SectionLabel>
+            <span style={{ flex: 1 }} />
+            {!editingInstructions && (
+              <Button variant="secondary" onClick={startEditingInstructions}>Edit</Button>
+            )}
+          </div>
+
+          {editingInstructions ? (
+            <>
+              <div style={{ fontSize: 12, color: color.muted, marginBottom: 12 }}>
+                The agent's system prompt — everything it should know and how it should behave.
+              </div>
+              <textarea
+                autoFocus
+                value={instructionsDraft}
+                onChange={(e) => setInstructionsDraft(e.target.value)}
+                style={{ ...textareaStyle, width: "100%", minHeight: 200, marginBottom: 12, boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button variant="primary" disabled={instructionsSaving || !instructionsDraft.trim()} onClick={saveInstructions}>
+                  {instructionsSaving ? "Saving…" : "Save"}
+                </Button>
+                <Button variant="secondary" disabled={instructionsSaving} onClick={() => setEditingInstructions(false)}>Cancel</Button>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{agent.config.instructions}</div>
+          )}
         </Card>
 
         <Card>

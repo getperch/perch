@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { color, font } from "@fizz/ui";
+import { color, font } from "@perch/ui";
 import type { BackendConfig } from "./lib/backend-config-store.js";
 
 export function ConnectScreen({ onConnect }: { onConnect: (config: BackendConfig) => Promise<void> }) {

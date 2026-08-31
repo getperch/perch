@@ -36,10 +36,10 @@ pub fn run() {
             google_workspace::begin_google_connect,
             google_workspace::complete_google_connect,
             google_workspace::disconnect_google_workspace,
-            api::google_workspace::google_workspace_get_connection,
-            api::google_workspace::google_workspace_get_client_status,
-            api::google_workspace::google_workspace_save_client,
-            api::google_workspace::google_workspace_clear_client,
+            api::connectors::google_workspace_get_connection,
+            api::connectors::connector_list,
+            api::connectors::connector_save_config,
+            api::connectors::connector_clear_config,
             api::channels::channels_list,
             api::channels::channels_get,
             api::channels::channels_create,
@@ -75,9 +75,15 @@ pub fn run() {
             api::plugins::plugins_get,
             api::plugins::plugins_publish,
             api::plugins::plugins_import,
+            api::knowledge::knowledge_list,
+            api::knowledge::knowledge_get,
+            api::knowledge::knowledge_put,
+            api::knowledge::knowledge_deprecate,
+            api::knowledge::knowledge_verify,
+            api::knowledge::knowledge_reindex,
             stream::subscribe_channel_events,
             stream::unsubscribe_channel_events,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Fizz");
+        .expect("error while running Perch");
 }

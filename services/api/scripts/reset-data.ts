@@ -9,8 +9,8 @@
  * cheaper here than writing a migration. It refuses to run against a "production" stage.
  *
  * Run it through SST so the table name is injected:
- *   pnpm --filter @fizz/api reset-data          # wraps the command in `sst shell`
- *   sst shell -- pnpm --filter @fizz/api exec tsx scripts/reset-data.ts
+ *   pnpm --filter @perch/api reset-data          # wraps the command in `sst shell`
+ *   sst shell -- pnpm --filter @perch/api exec tsx scripts/reset-data.ts
  *
  * Pass --yes to skip the confirmation prompt.
  */
@@ -34,7 +34,7 @@ function resolveTableName(): string {
   if (process.env.WORKSPACE_TABLE_NAME) return process.env.WORKSPACE_TABLE_NAME;
   throw new Error(
     "Couldn't resolve the table name. Run this through SST so the resource env is present:\n" +
-      "  pnpm --filter @fizz/api reset-data",
+      "  pnpm --filter @perch/api reset-data",
   );
 }
 

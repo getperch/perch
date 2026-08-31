@@ -2,8 +2,8 @@ import { z } from "zod";
 import { agentConfig, agentMember, modelId, skillDoc, toolGrant, triggerConfig } from "./member.js";
 
 export const PLUGIN_SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
-/** Namespace this fizz instance writes fizz-specific agent data under, per the spec's `extensions` escape hatch. */
-export const FIZZ_AGENT_EXTENSION_KEY = "org.fizz.agent";
+/** Namespace this perch instance writes perch-specific agent data under, per the spec's `extensions` escape hatch. */
+export const PERCH_AGENT_EXTENSION_KEY = "dev.perch.agent";
 
 export const pluginManifest = z.object({
   $schema: z.literal(PLUGIN_SCHEMA_URL),
@@ -26,14 +26,14 @@ export const pluginManifest = z.object({
   /** Names of additional skill folders this plugin carries beyond the implicit primary one
    * (named after `name` itself, at `skills/{name}/SKILL.md`) — e.g. `skills/foo/SKILL.md` for a
    * `"foo"` entry here. A portable-shape concern any conformant reader needs to discover what to
-   * fetch, so it lives on the manifest itself rather than fizz's private `extensions` block. */
+   * fetch, so it lives on the manifest itself rather than perch's private `extensions` block. */
   skills: z.array(z.string()).optional(),
   extensions: z.record(z.string(), z.unknown()).optional(),
 });
 export type PluginManifest = z.infer<typeof pluginManifest>;
 
 /** Everything an AgentConfig carries that has no home in the portable plugin.json/SKILL.md shape. */
-export const fizzAgentExtension = z.object({
+export const perchAgentExtension = z.object({
   handle: z.string().min(1),
   roleDescription: z.string().min(1),
   colorBg: z.string(),
@@ -43,7 +43,7 @@ export const fizzAgentExtension = z.object({
   triggers: z.array(triggerConfig),
   dailySpendCapUsd: z.number().positive(),
 });
-export type FizzAgentExtension = z.infer<typeof fizzAgentExtension>;
+export type PerchAgentExtension = z.infer<typeof perchAgentExtension>;
 
 export const pluginIndexEntry = z.object({
   name: z.string(),
@@ -71,7 +71,7 @@ function skillMarkdownFor(name: string, description: string, body: string): stri
 }
 
 /**
- * Builds the plugin.json manifest + skills/<handle>/SKILL.md body for a fizz agent, plus one
+ * Builds the plugin.json manifest + skills/<handle>/SKILL.md body for a perch agent, plus one
  * additional skills/<skill.name>/SKILL.md per entry in `agent.config.skills`. Throws if any skill's
  * name collides with the plugin's own name (the primary skill's own folder).
  */
@@ -84,7 +84,7 @@ export function agentToPlugin(
   const collision = agent.config.skills.find((s) => s.name === name);
   if (collision) throw new Error(`skill "${collision.name}" collides with this agent's own plugin name — rename it`);
 
-  const extension: FizzAgentExtension = {
+  const extension: PerchAgentExtension = {
     handle: agent.handle,
     roleDescription: agent.roleDescription,
     colorBg: agent.colorBg,
@@ -101,7 +101,7 @@ export function agentToPlugin(
     version: opts?.version ?? "1.0.0",
     description: agent.roleDescription,
     ...(agent.config.skills.length > 0 && { skills: agent.config.skills.map((s) => s.name) }),
-    extensions: { [FIZZ_AGENT_EXTENSION_KEY]: extension },
+    extensions: { [PERCH_AGENT_EXTENSION_KEY]: extension },
   };
 
   const skillMarkdown = skillMarkdownFor(name, agent.roleDescription, agent.config.instructions);
@@ -113,7 +113,7 @@ export function agentToPlugin(
   return { manifest, skillMarkdown, additionalSkillMarkdown };
 }
 
-/** Fallback shape for a plugin published outside fizz, with no `org.fizz.agent` extension block. */
+/** Fallback shape for a plugin published outside perch, with no `dev.perch.agent` extension block. */
 const DEFAULT_MODEL: z.infer<typeof modelId> = "anthropic.claude-3-5-haiku-20241022-v1:0";
 const DEFAULT_DAILY_SPEND_CAP_USD = 12;
 
@@ -134,9 +134,9 @@ function parseSkillMarkdown(skillMarkdown: string, fallbackName: string): z.infe
 }
 
 /**
- * Reverses agentToPlugin — parses SKILL.md frontmatter + body and merges with the fizz extension
+ * Reverses agentToPlugin — parses SKILL.md frontmatter + body and merges with the perch extension
  * block when present. Any agent-plugins.org-compliant plugin lacking that block (i.e. not
- * published by a fizz instance) still imports, falling back to conservative defaults instead of
+ * published by a perch instance) still imports, falling back to conservative defaults instead of
  * throwing — this is what makes "install and run any agent plugin" actually true.
  *
  * `additionalSkillMarkdown` (skill name -> raw SKILL.md body) covers every skill beyond the
@@ -144,12 +144,12 @@ function parseSkillMarkdown(skillMarkdown: string, fallbackName: string): z.infe
  * plugin has any.
  */
 export function pluginToAgentDraft(manifest: PluginManifest, skillMarkdown: string, additionalSkillMarkdown: Record<string, string> = {}) {
-  const extensionRaw = manifest.extensions?.[FIZZ_AGENT_EXTENSION_KEY];
-  const parsed = fizzAgentExtension.safeParse(extensionRaw);
+  const extensionRaw = manifest.extensions?.[PERCH_AGENT_EXTENSION_KEY];
+  const parsed = perchAgentExtension.safeParse(extensionRaw);
   const instructions = skillMarkdown.replace(FRONTMATTER, "").trim();
   const skills = Object.entries(additionalSkillMarkdown).map(([name, md]) => parseSkillMarkdown(md, name));
 
-  const extension: FizzAgentExtension = parsed.success
+  const extension: PerchAgentExtension = parsed.success
     ? parsed.data
     : {
         handle: slugify(manifest.name),

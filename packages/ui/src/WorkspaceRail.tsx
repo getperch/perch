@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Person } from "@fizz/core";
+import type { Person } from "@perch/core";
 import { color, font, radius } from "./tokens.js";
 import { CheckIcon, ChevronDownIcon, PlusLargeIcon } from "./icons.js";
 import { monoFor } from "./utils.js";
@@ -159,7 +159,7 @@ export function WorkspaceRail({
                 setMenu(null);
               }}
               className="ws-hoverable"
-              style={{ ...rowStyle, fontSize: 13.5, color: "#33333B" }}
+              style={{ ...rowStyle, fontSize: 13.5, color: "#413D4E" }}
             >
               <span style={{ flex: 1, textAlign: "left" }}>{i.label}</span>
               {i.hint && <span style={{ font: `400 11px ${font.mono}`, color: color.mutedLight }}>{i.hint}</span>}

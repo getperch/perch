@@ -264,7 +264,7 @@ export function makeGateway(args: {
   const gateway = new aws.bedrock.AgentcoreGateway(
     "Gateway",
     {
-      name: "fizz-tools",
+      name: "perch-tools",
       protocolType: "MCP",
       // SigV4, not an OAuth/JWT authorizer — matches how agent-runtime calls in (its own execution
       // role's IAM permissions, not a bearer token).

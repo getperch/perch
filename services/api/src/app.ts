@@ -14,7 +14,7 @@ import { runsApp } from "./routers/runs.js";
 import { workspaceApp } from "./routers/workspace.js";
 import { pluginsApp } from "./routers/plugins.js";
 import { knowledgeApp } from "./routers/knowledge.js";
-import { googleWorkspaceApp } from "./routers/google-workspace.js";
+import { connectorsApp } from "./routers/connectors.js";
 
 const routes = new OpenAPIHono<AppEnv>();
 
@@ -33,9 +33,9 @@ routes.route("/runs", runsApp);
 routes.route("/workspace", workspaceApp);
 routes.route("/plugins", pluginsApp);
 routes.route("/knowledge", knowledgeApp);
-routes.route("/google-workspace", googleWorkspaceApp);
+routes.route("/connectors", connectorsApp);
 
-routes.doc31("/openapi.json", { openapi: "3.1.0", info: { title: "Fizz API", version: "0.1.0" } });
+routes.doc31("/openapi.json", { openapi: "3.1.0", info: { title: "Perch API", version: "0.1.0" } });
 
 /**
  * `infra/api.ts` mounts this Lambda behind `ANY /api/{proxy+}` on the REST API — API Gateway's

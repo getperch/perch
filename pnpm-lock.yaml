@@ -20,13 +20,13 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@fizz/api-contract':
+      '@perch/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
-      '@fizz/core':
+      '@perch/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@fizz/ui':
+      '@perch/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@tanstack/react-query':
@@ -96,7 +96,7 @@ importers:
 
   packages/api-contract:
     dependencies:
-      '@fizz/core':
+      '@perch/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -128,7 +128,7 @@ importers:
       '@emoji-mart/react':
         specifier: ^1.1.1
         version: 1.1.1(emoji-mart@5.6.0)(react@18.3.1)
-      '@fizz/core':
+      '@perch/core':
         specifier: workspace:*
         version: link:../core
       emoji-mart:
@@ -180,15 +180,15 @@ importers:
       '@aws/bedrock-token-generator':
         specifier: ^1.1.0
         version: 1.1.0
-      '@fizz/api-contract':
-        specifier: workspace:*
-        version: link:../../packages/api-contract
-      '@fizz/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@4.4.3)
+      '@perch/api-contract':
+        specifier: workspace:*
+        version: link:../../packages/api-contract
+      '@perch/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@smithy/protocol-http':
         specifier: ^3.0.0
         version: 3.3.0
@@ -241,18 +241,18 @@ importers:
       '@aws-sdk/lib-dynamodb':
         specifier: ^3.700.0
         version: 3.1107.0(@aws-sdk/client-dynamodb@3.1107.0)
-      '@fizz/api-contract':
-        specifier: workspace:*
-        version: link:../../packages/api-contract
-      '@fizz/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@hono/zod-openapi':
         specifier: ^1.6.0
         version: 1.6.0(hono@4.13.1)(zod@4.4.3)
       '@openauthjs/openauth':
         specifier: ^0.4.3
         version: 0.4.3(arctic@2.3.4)(hono@4.13.1)
+      '@perch/api-contract':
+        specifier: workspace:*
+        version: link:../../packages/api-contract
+      '@perch/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       hono:
         specifier: ^4.6.0
         version: 4.13.1
@@ -290,7 +290,7 @@ importers:
       '@aws-sdk/lib-dynamodb':
         specifier: ^3.700.0
         version: 3.1107.0(@aws-sdk/client-dynamodb@3.1107.0)
-      '@fizz/core':
+      '@perch/core':
         specifier: workspace:*
         version: link:../../packages/core
       zod:
@@ -337,6 +337,9 @@ importers:
       '@aws-sdk/client-ssm':
         specifier: ^3.700.0
         version: 3.1118.0
+      '@aws-sdk/client-sts':
+        specifier: ^3.700.0
+        version: 3.1121.0
       sst:
         specifier: ^4.17.1
         version: 4.17.1
@@ -356,6 +359,9 @@ importers:
       '@aws-sdk/client-ssm':
         specifier: ^3.700.0
         version: 3.1118.0
+      '@aws-sdk/client-sts':
+        specifier: ^3.700.0
+        version: 3.1121.0
       sst:
         specifier: ^4.17.1
         version: 4.17.1
@@ -431,6 +437,10 @@ packages:
 
   '@aws-sdk/client-ssm@3.1118.0':
     resolution: {integrity: sha512-TLB3v/wl9WLcudi7zm8NMV4GUu0XPy00jmOCBqc4TrodQzLI0UeuZVRaVXZjjTnqtkeSHs4HNc3dFU9qtX3rlQ==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-sts@3.1121.0':
+    resolution: {integrity: sha512-wpsgstPgWUgCKk4WFP5qjfg/zWgpmbKEjRBPz5Ydw5jawdd7pDBtH7VrhiJyMSS48PN2c7n8KfkwTRx/20Cs7Q==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.977.6':
@@ -3473,6 +3483,18 @@ snapshots:
     dependencies:
       '@aws-sdk/core': 3.977.9
       '@aws-sdk/credential-provider-node': 3.972.81
+      '@aws-sdk/types': 3.974.5
+      '@smithy/core': 3.33.3
+      '@smithy/fetch-http-handler': 5.7.2
+      '@smithy/node-http-handler': 4.11.3
+      '@smithy/types': 4.17.2
+      tslib: 2.8.1
+
+  '@aws-sdk/client-sts@3.1121.0':
+    dependencies:
+      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/credential-provider-node': 3.972.81
+      '@aws-sdk/signature-v4-multi-region': 3.996.46
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.33.3
       '@smithy/fetch-http-handler': 5.7.2

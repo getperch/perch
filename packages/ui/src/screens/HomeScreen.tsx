@@ -1,9 +1,9 @@
-import type { Channel, Member, Message, Task } from "@fizz/core";
+import type { Channel, Member, Message, Task } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
 import { InviteIcon, MenuIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor, relativeTime } from "../utils.js";
+import { avatarColorsFor, relativeTime } from "../utils.js";
 
 /**
  * Landing view from the redesign — a daily briefing built around what the workspace's agents did
@@ -93,7 +93,7 @@ export function HomeScreen({
         <button
           onClick={onInvite}
           className="ws-hoverable"
-          style={{ display: "flex", alignItems: "center", gap: 7, height: 32, padding: "0 11px", border: `1px solid ${color.borderStrong}`, borderRadius: 8, fontSize: 13, color: "#33333B", cursor: "pointer", background: color.surface }}
+          style={{ display: "flex", alignItems: "center", gap: 7, height: 32, padding: "0 11px", border: `1px solid ${color.borderStrong}`, borderRadius: 8, fontSize: 13, color: "#413D4E", cursor: "pointer", background: color.surface }}
         >
           <InviteIcon size={14} stroke={color.mutedDark} />
           Invite
@@ -126,7 +126,7 @@ export function HomeScreen({
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {waiting.map((t) => {
                   const owner = membersById[t.ownerId];
-                  const pal = owner ? paletteFor(owner.id) : paletteFor("?");
+                  const pal = avatarColorsFor(owner);
                   const chan = channelsById[t.channelId];
                   return (
                     <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: "13px 14px", background: color.surface }}>
@@ -138,7 +138,7 @@ export function HomeScreen({
                           {chan && <span style={{ fontSize: 12.5, color: color.accentText }}>#{chan.name}</span>}
                           <span style={{ font: `400 11.5px ${font.mono}`, color: color.mutedLight }}>{relativeTime(t.updatedAt)}</span>
                         </div>
-                        <div style={{ marginTop: 4, fontSize: 13.5, color: "#33333B", lineHeight: 1.55 }}>{t.title}</div>
+                        <div style={{ marginTop: 4, fontSize: 13.5, color: "#413D4E", lineHeight: 1.55 }}>{t.title}</div>
                       </div>
                       <button
                         onClick={() => (t.runId ? onOpenRun(t.runId) : chan ? onOpenChannel(t.channelId) : onGoTasks())}
@@ -161,7 +161,7 @@ export function HomeScreen({
               <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.lg, overflow: "hidden" }}>
                 {agentActivity.map((m, i) => {
                   const a = m.authorId ? membersById[m.authorId] : undefined;
-                  const pal = a ? paletteFor(a.id) : paletteFor("?");
+                  const pal = avatarColorsFor(a);
                   return (
                     <button
                       key={m.id}
@@ -170,7 +170,7 @@ export function HomeScreen({
                       style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "11px 14px", borderTop: i ? `1px solid ${color.borderLight}` : "none", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
                     >
                       <Avatar mono={a ? a.mono : "?"} bg={pal.bg} fg={pal.fg} size={22} square />
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "#33333B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.text}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "#413D4E", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.text}</span>
                       <span style={{ font: `400 11.5px ${font.mono}`, color: color.mutedLight, flex: "none" }}>{relativeTime(m.createdAt)}</span>
                     </button>
                   );

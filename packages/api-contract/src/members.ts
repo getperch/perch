@@ -8,7 +8,7 @@ import {
   memberRole,
   person,
   workspaceId,
-} from "@fizz/core";
+} from "@perch/core";
 
 export const listMembersInput = z.object({ workspaceId });
 export const listMembersOutput = z.array(member);
@@ -36,10 +36,13 @@ export const createAgentInput = z.object({
 });
 export const createAgentOutput = agentMember;
 
-export const updateAgentInput = z.object({
-  memberId,
-  config: agentConfig.partial(),
+/** PATCH body for an existing agent — any subset of its editable fields. `config` is itself a
+ * partial, so a single field (e.g. `instructions`) can be updated without resending the rest. */
+export const updateAgentPatch = z.object({
+  roleDescription: z.string().min(1).optional(),
+  config: agentConfig.partial().optional(),
 });
+export const updateAgentInput = updateAgentPatch.extend({ memberId });
 export const updateAgentOutput = agentMember;
 
 /** Permanently removes a member (agent or person) from the workspace. The workspace owner and the

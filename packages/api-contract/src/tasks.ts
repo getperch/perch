@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { channelId, memberId, task, taskId, taskSource, taskStatus, workspaceId } from "@fizz/core";
+import { channelId, memberId, task, taskId, taskSource, taskStatus, workspaceId } from "@perch/core";
 
 export const listTasksInput = z.object({
   workspaceId,

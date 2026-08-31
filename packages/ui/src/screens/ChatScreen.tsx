@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import EmojiPicker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
-import type { ArtifactRef, Channel, Member, Message } from "@fizz/core";
+import type { ArtifactRef, Channel, Member, Message } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
@@ -31,7 +31,7 @@ import {
   TrashIcon,
 } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { mentionTokenFor, monoFor, paletteFor, relativeTime } from "../utils.js";
+import { avatarColorsFor, mentionTokenFor, monoFor, relativeTime } from "../utils.js";
 
 export function ChatScreen({
   channel,
@@ -210,7 +210,7 @@ export function ChatScreen({
               >
                 <span style={{ display: "flex" }}>
                   {memberStack.map((m, i) => {
-                    const pal = paletteFor(m.id);
+                    const pal = avatarColorsFor(m);
                     return (
                       <span key={m.id} style={{ marginLeft: i ? -7 : 0, borderRadius: radius.pill, border: `1.5px solid ${color.surface}` }}>
                         <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={20} square={m.kind === "agent"} />
@@ -292,7 +292,7 @@ export function ChatScreen({
             <div style={{ padding: 16, fontSize: 13, color: color.mutedLight }}>No one's in this channel yet.</div>
           )}
           {channelMembers.map((m) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             const canRemove = onRemoveMember && m.id !== currentUserId;
             return (
               <div key={m.id} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: radius.md }}>
@@ -333,7 +333,7 @@ export function ChatScreen({
                 Not in this channel
               </div>
               {addableMembers.map((m) => {
-                const pal = paletteFor(m.id);
+                const pal = avatarColorsFor(m);
                 return (
                   <div key={m.id} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: radius.md }}>
                     <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={26} square={m.kind === "agent"} />
@@ -674,7 +674,7 @@ function MessageRow({
     );
   }
 
-  const pal = author ? paletteFor(author.id) : paletteFor("unknown");
+  const pal = avatarColorsFor(author, "unknown");
   const isAgent = author?.kind === "agent";
   const isPending = m.id.startsWith("optimistic-");
   const isFailed = m.id.startsWith("failed-");
@@ -1074,7 +1074,7 @@ function Composer({
       {mention && candidates.length > 0 && (
         <div className="ws-sb" style={{ position: "absolute", bottom: "100%", left: 26, marginBottom: 6, width: 260, maxHeight: 220, overflowY: "auto", background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.lg, boxShadow: "0 8px 24px #00000026", padding: 4, zIndex: 10 }}>
           {candidates.map((m, i) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             return (
               <button key={m.id} onMouseDown={(e) => { e.preventDefault(); insertMention(m); }} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", height: 32, padding: "0 8px", borderRadius: radius.md, background: i === mention.index ? color.surfaceMuted : "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
                 <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={20} square={m.kind === "agent"} />

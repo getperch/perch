@@ -2,7 +2,7 @@
 export default $config({
   app(input) {
     return {
-      name: "fizz",
+      name: "perch",
       // Self-hosters running their own copy typically want `remove` even in "production" so a
       // teardown doesn't strand billed resources; the audit bucket's Object Lock makes the audit
       // trail itself un-deletable regardless of this setting.

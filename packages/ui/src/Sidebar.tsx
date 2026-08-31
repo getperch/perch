@@ -1,6 +1,7 @@
 import { useState } from "react";
-import type { Channel } from "@fizz/core";
+import type { Channel } from "@perch/core";
 import { Avatar } from "./primitives/Avatar.js";
+import { PerchWordmark } from "./Brand.js";
 import { ChevronDownIcon, PlusIcon } from "./icons.js";
 import { color, font, radius } from "./tokens.js";
 
@@ -29,7 +30,6 @@ export function Sidebar({
   navItems,
   activeNavKey,
   onNav,
-  onToggleWorkspaceMenu,
   channels,
   activeChannelId,
   onSelectChannel,
@@ -39,11 +39,11 @@ export function Sidebar({
   onOpenDm,
   onNewMessage,
 }: {
+  /** Shown only as the hover tooltip on the brand mark — switching workspaces lives on the outer rail. */
   workspaceName: string;
   navItems: NavItem[];
   activeNavKey?: string;
   onNav: (key: string) => void;
-  onToggleWorkspaceMenu: () => void;
   channels: (Channel & { unread?: number })[];
   activeChannelId?: string;
   onSelectChannel: (id: string) => void;
@@ -80,12 +80,9 @@ export function Sidebar({
       }}
     >
       <div style={{ height: 56, flex: "none", display: "flex", alignItems: "center", gap: 6, padding: "0 14px", borderBottom: `1px solid ${color.borderLight}` }}>
-        <button onClick={onToggleWorkspaceMenu} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", minWidth: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{workspaceName}</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color.muted} strokeWidth={2} strokeLinecap="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
+        <span title={workspaceName} style={{ display: "flex", minWidth: 0 }}>
+          <PerchWordmark size={20} />
+        </span>
         <span style={{ flex: 1 }} />
         <button onClick={onCreateChannel} className="ws-hoverable" title="Create a channel" style={iconBtn}>
           <PlusIcon size={15} stroke={color.muted} />

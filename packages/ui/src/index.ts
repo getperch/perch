@@ -1,6 +1,7 @@
 export * from "./tokens.js";
 export * from "./utils.js";
 export * from "./icons.js";
+export * from "./Brand.js";
 export * from "./AppShell.js";
 export * from "./Sidebar.js";
 export * from "./WorkspaceRail.js";
@@ -32,4 +33,5 @@ export * from "./screens/RunDetailScreen.js";
 export * from "./screens/TasksScreen.js";
 export * from "./screens/PeopleScreen.js";
 export * from "./screens/SettingsScreen.js";
+export * from "./screens/KnowledgeScreen.js";
 export * from "./screens/AgentDetailScreen.js";

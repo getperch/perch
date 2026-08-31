@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { channelId, memberId, messageId, workspaceId } from "@fizz/core";
+import { channelId, memberId, messageId, workspaceId } from "@perch/core";
 
 export const getMentionsInput = z.object({ workspaceId });
 

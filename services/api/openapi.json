@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Fizz API",
+    "title": "Perch API",
     "version": "0.1.0"
   },
   "components": {
@@ -3415,109 +3415,118 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "instructions": {
+                  "roleDescription": {
                     "type": "string",
                     "minLength": 1
                   },
-                  "model": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "tools": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "toolName": {
-                          "type": "string"
-                        },
-                        "needsApproval": {
-                          "type": "boolean",
-                          "default": false
-                        }
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "instructions": {
+                        "type": "string",
+                        "minLength": 1
                       },
-                      "required": [
-                        "toolName"
-                      ]
-                    },
-                    "default": []
-                  },
-                  "triggers": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "mention",
-                            "schedule",
-                            "webhook",
-                            "relevant"
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "toolName": {
+                              "type": "string"
+                            },
+                            "needsApproval": {
+                              "type": "boolean",
+                              "default": false
+                            }
+                          },
+                          "required": [
+                            "toolName"
                           ]
                         },
-                        "enabled": {
-                          "type": "boolean",
-                          "default": false
-                        },
-                        "schedule": {
-                          "type": "string"
-                        },
-                        "webhookPath": {
-                          "type": "string"
-                        },
-                        "label": {
-                          "type": "string"
-                        },
-                        "prompt": {
-                          "type": "string"
-                        }
+                        "default": []
                       },
-                      "required": [
-                        "kind"
-                      ]
-                    },
-                    "default": []
-                  },
-                  "skills": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 64,
-                          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+                      "triggers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "mention",
+                                "schedule",
+                                "webhook",
+                                "relevant"
+                              ]
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "schedule": {
+                              "type": "string"
+                            },
+                            "webhookPath": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "prompt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
                         },
-                        "description": {
+                        "default": []
+                      },
+                      "skills": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+                            },
+                            "description": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "body": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "description",
+                            "body"
+                          ]
+                        },
+                        "default": []
+                      },
+                      "dailySpendCapUsd": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "postsInChannelIds": {
+                        "type": "array",
+                        "items": {
                           "type": "string",
                           "minLength": 1
                         },
-                        "body": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "description",
-                        "body"
-                      ]
-                    },
-                    "default": []
-                  },
-                  "dailySpendCapUsd": {
-                    "type": "number",
-                    "exclusiveMinimum": 0
-                  },
-                  "postsInChannelIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "default": []
+                        "default": []
+                      }
+                    }
                   }
                 }
               }
@@ -3708,7 +3717,7 @@
         }
       }
     },
-    "/members/agents/{memberId}/google-workspace": {
+    "/members/agents/{memberId}/connectors/{connectorId}": {
       "get": {
         "parameters": [
           {
@@ -3718,6 +3727,17 @@
             },
             "required": true,
             "name": "memberId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
             "in": "path"
           }
         ],
@@ -3765,6 +3785,17 @@
             "required": true,
             "name": "memberId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
+            "in": "path"
           }
         ],
         "responses": {
@@ -3792,7 +3823,60 @@
         }
       }
     },
-    "/members/agents/{memberId}/google-workspace/connect": {
+    "/members/agents/{memberId}/connectors/{connectorId}/authorize": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "memberId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "clientId",
+                    "scopes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/agents/{memberId}/connectors/{connectorId}/connect": {
       "post": {
         "parameters": [
           {
@@ -3802,6 +3886,17 @@
             },
             "required": true,
             "name": "memberId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
             "in": "path"
           }
         ],
@@ -4682,6 +4777,10 @@
                       },
                       "default": []
                     },
+                    "defaultModel": {
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
@@ -4766,6 +4865,10 @@
                       },
                       "default": []
                     },
+                    "defaultModel": {
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
@@ -4792,6 +4895,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
                   "approvalPolicy": {
                     "type": "string",
                     "enum": [
@@ -4813,6 +4921,20 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "defaultModel": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
                   }
                 }
               }
@@ -4864,6 +4986,10 @@
                         "type": "string"
                       },
                       "default": []
+                    },
+                    "defaultModel": {
+                      "type": "string",
+                      "minLength": 1
                     },
                     "createdAt": {
                       "type": "string",
@@ -5615,7 +5741,7 @@
         }
       }
     },
-    "/google-workspace/client-id": {
+    "/connectors": {
       "get": {
         "responses": {
           "200": {
@@ -5623,15 +5749,72 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "clientId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "clientId"
-                  ]
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "enum": [
+                          "google-workspace"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "docsUrl": {
+                        "type": "string"
+                      },
+                      "configFields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "placeholder": {
+                              "type": "string"
+                            },
+                            "secret": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "label",
+                            "secret"
+                          ]
+                        }
+                      },
+                      "hasPerAgentConnect": {
+                        "type": "boolean"
+                      },
+                      "configured": {
+                        "type": "boolean"
+                      },
+                      "publicValues": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "description",
+                      "configFields",
+                      "hasPerAgentConnect",
+                      "configured"
+                    ]
+                  }
                 }
               }
             }
@@ -5639,26 +5822,37 @@
         }
       }
     },
-    "/google-workspace/client": {
+    "/connectors/{connectorId}/config": {
       "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
+            "in": "path"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "clientId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "clientSecret": {
-                    "type": "string",
-                    "minLength": 1
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 },
                 "required": [
-                  "clientId",
-                  "clientSecret"
+                  "values"
                 ]
               }
             }
@@ -5677,14 +5871,10 @@
                       "enum": [
                         true
                       ]
-                    },
-                    "clientId": {
-                      "type": "string"
                     }
                   },
                   "required": [
-                    "configured",
-                    "clientId"
+                    "configured"
                   ]
                 }
               }
@@ -5693,6 +5883,19 @@
         }
       },
       "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -5718,8 +5921,21 @@
         }
       }
     },
-    "/google-workspace/status": {
+    "/connectors/{connectorId}/status": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google-workspace"
+              ]
+            },
+            "required": true,
+            "name": "connectorId",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -5731,8 +5947,11 @@
                     "configured": {
                       "type": "boolean"
                     },
-                    "clientId": {
-                      "type": "string"
+                    "publicValues": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [

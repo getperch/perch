@@ -187,7 +187,7 @@ export function processActor(id: string): OkfActor {
  * `<hash>.md`, which is how the agent MemoryStore stays idempotent under at-least-once extraction
  * retries. FNV-1a over the UTF-8 bytes: not cryptographic, but more than enough to avoid
  * collisions across one agent's fact set, and pure JS so this module stays runnable in the browser
- * bundle (`packages/ui` imports `@fizz/core`).
+ * bundle (`packages/ui` imports `@perch/core`).
  */
 export function conceptFilename(content: string): string {
   const text = content.trim();

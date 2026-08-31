@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { channel, channelId, memberId, workspaceId } from "@fizz/core";
+import { channel, channelId, memberId, workspaceId } from "@perch/core";
 
 export const listChannelsInput = z.object({ workspaceId });
 export const listChannelsOutput = z.array(channel);

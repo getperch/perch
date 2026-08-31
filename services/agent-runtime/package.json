@@ -1,5 +1,5 @@
 {
-  "name": "@fizz/agent-runtime",
+  "name": "@perch/agent-runtime",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -19,8 +19,8 @@
     "@smithy/protocol-http": "^3.0.0",
     "@smithy/signature-v4": "^3.0.0",
     "@strands-agents/sdk": "^1.0.0",
-    "@fizz/api-contract": "workspace:*",
-    "@fizz/core": "workspace:*",
+    "@perch/api-contract": "workspace:*",
+    "@perch/core": "workspace:*",
     "openai": "^6.45.0",
     "sst": "^4.17.1",
     "ulid": "^2.3.0",

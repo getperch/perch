@@ -12,7 +12,7 @@ import {
   serializeConcept,
   trustTier,
   type OkfConcept,
-} from "@fizz/core";
+} from "@perch/core";
 
 /**
  * Agent memory, both halves, backed by the one `AgentMemoryBucket` (see infra/storage.ts):
@@ -194,8 +194,8 @@ export class S3KnowledgeStore implements MemoryStore {
     const source = this.ctx.channelId
       ? {
           resource: this.ctx.runId
-            ? `fizz:workspace/${this.ctx.workspaceId}/channel/${this.ctx.channelId}/run/${this.ctx.runId}`
-            : `fizz:workspace/${this.ctx.workspaceId}/channel/${this.ctx.channelId}`,
+            ? `perch:workspace/${this.ctx.workspaceId}/channel/${this.ctx.channelId}/run/${this.ctx.runId}`
+            : `perch:workspace/${this.ctx.workspaceId}/channel/${this.ctx.channelId}`,
           title: "Agent conversation",
         }
       : undefined;
