@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    fizz_desktop_lib::run();
+    perch_desktop_lib::run();
 }

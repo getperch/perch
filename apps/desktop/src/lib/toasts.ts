@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Toast } from "@fizz/ui";
+import type { Toast } from "@perch/ui";
 
 /** Same module-level-store + useSyncExternalStore shape as `auth.ts` — a global store so any
  * mutation's onError (or auth.ts's signed-out path) can push a toast without needing to be

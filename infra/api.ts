@@ -1,5 +1,8 @@
 /// <reference path="../.sst/platform/config.d.ts" />
+import * as command from "@pulumi/command";
+import { Image } from "@pulumi/docker-build";
 import { makeGateway, toolsProvider } from "./gateway.js";
+import { makeRoutineScheduling } from "./schedule.js";
 
 export function makeApi(args: {
   table: sst.aws.Dynamo;
@@ -12,35 +15,66 @@ export function makeApi(args: {
 }) {
   const { table, bus, auditBucket, auditQueue, agentPluginsBucket, agentRecordingsBucket, agentMemoryBucket } = args;
 
-  // The one OAuth client a human has to register by hand in Google Cloud Console (Desktop app
-  // type, Gmail API + Calendar API enabled) — see infra/README.md for the exact steps. This is
-  // deliberately NOT an `sst.Secret`/deploy-time value: a base deploy shouldn't require it (most
-  // workspaces may never touch Gmail/Calendar), so instead a workspace admin enters it at runtime
-  // via Settings → Integrations (`PUT /google-workspace/client`), which stores it as a
-  // workspace-scoped SSM SecureString — see services/api/src/google-oauth.ts's
-  // `googleOAuthClientSsmPath`. Every consumer below (the client-id endpoint, the connect
-  // endpoint, the gmail/calendar tools' token refresh) fails with a clear, visible error rather
-  // than silently proceeding until that's done.
-  //
-  // Each agent's Google Workspace refresh token lives at its own SSM SecureString path — see
-  // services/api/src/google-oauth.ts's `googleWorkspaceSsmPath` for the exact template this
-  // pattern has to match. Scoped by stage so dev/prod stages (and PR stages) never collide or see
-  // each other's connections; workspaceId/memberId are wildcarded since they're only known at
-  // request time, not at deploy time.
+  // Connectors (Settings → Connectors) let a workspace admin wire Perch up to a third-party
+  // product (Google Workspace today; more later). Each connector's credentials are entered at
+  // runtime — deliberately NOT `sst.Secret`/deploy-time values, since most workspaces never wire
+  // up a given connector — and stored as a per-workspace SSM SecureString at
+  // `/perch/${stage}/${ws}/connectors/${connectorId}/client` (see
+  // services/api/src/connector-config.ts). Connectors with a per-agent connect flow additionally
+  // store one token per (agent, connector) at
+  // `/perch/${stage}/${ws}/agents/${agent}/connectors/${connectorId}/token` (see
+  // services/api/src/google-oauth.ts). Scoped by stage so dev/prod/PR stages never collide;
+  // workspace/agent/connector segments are wildcarded since they're only known at request time.
   const accountId = aws.getCallerIdentityOutput({}).accountId;
   const region = aws.getRegionOutput({}).name;
-  const googleWorkspaceSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/fizz/${$app.stage}/*/agents/*/google-workspace-refresh-token`;
-  // The workspace-level OAuth client config (clientId/clientSecret JSON) — one per workspace, no
-  // `/agents/*/` segment, must match `googleOAuthClientSsmPath` exactly.
-  const googleOAuthClientSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/fizz/${$app.stage}/*/google-oauth-client`;
+  // Per-agent connector token: `/perch/${stage}/${ws}/agents/${agent}/connectors/${connectorId}/token`
+  // (see services/api/src/google-oauth.ts's `googleAgentTokenSsmPath`). Per-workspace connector
+  // client config: `/perch/${stage}/${ws}/connectors/${connectorId}/client` (see
+  // services/api/src/connector-config.ts's `connectorClientSsmPath`). workspaceId/agentId/
+  // connectorId are wildcarded — only known at request time.
+  const connectorAgentTokenSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/agents/*/connectors/*/token`;
+  const connectorClientSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/connectors/*/client`;
+  // Per-routine secret values (see services/api/src/procedures-support.ts's `procedureSecretSsmPath`).
+  // workspaceId/procedureId/key are only known at request time, so wildcarded; scoped by stage.
+  const procedureSecretSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/procedure/*`;
+
+  // -- Per-agent isolation of the connector token read ------------------------------------------
+  //
+  // `ToolGmail`/`ToolCalendar` are shared singleton Lambdas — every agent's gmail/calendar call
+  // runs the same function. A standing `ssm:GetParameter` grant on the wildcard
+  // `.../agents/*/connectors/*/token` pattern would let any one tool call read any agent's token.
+  // Static IAM on a shared role can't say "only for the agent this invocation is for", so instead
+  // the tool Lambdas hold NO SSM permission directly: each invocation calls `sts:AssumeRole` on
+  // this `ConnectorTokenReader` role, passing an inline session policy scoped to exactly the one
+  // parameter ARN for the `__agentId` on the event (see services/tools/gmail/src/google-token.ts).
+  // The base role below can read the whole family; the per-call session policy is what narrows each
+  // actual read to a single agent.
+  //
+  // Trust is the account root, not the tool roles by ARN — referencing the SST-generated tool role
+  // ARNs here would create a dependency cycle (role ⇄ function). The real gate is that ONLY the two
+  // tool Lambdas are granted `sts:AssumeRole` on this role (their `permissions` blocks below);
+  // nothing else in the account can assume it.
+  const connectorTokenReaderRole = new aws.iam.Role("ConnectorTokenReader", {
+    assumeRolePolicy: $jsonStringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Principal: { AWS: $interpolate`arn:aws:iam::${accountId}:root` }, Action: "sts:AssumeRole" }],
+    }),
+  });
+  new aws.iam.RolePolicy("ConnectorTokenReaderPolicy", {
+    role: connectorTokenReaderRole.id,
+    policy: $jsonStringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Action: ["ssm:GetParameter"], Resource: [connectorAgentTokenSsmArnPattern, connectorClientSsmArnPattern] }],
+    }),
+  });
 
   // One Lambda per tool grant a workspace agent can hold — see services/tools/*. Each runs in its
   // own Firecracker microVM in isolation, reached only as a Gateway target (see infra/gateway.ts) —
   // none of these get their own env var/IAM grant on agentRuntime; agentRuntime talks MCP straight
   // to the Gateway that fronts them instead (see services/agent-runtime/src/mcp-gateways.ts).
   //
-  // All 4 deploy via `toolsProvider` (us-east-1), not this app's home region — a Bedrock AgentCore
-  // Gateway can only front Lambdas that live in its own region (confirmed live — see
+  // All of them deploy via `toolsProvider` (us-east-1), not this app's home region — a Bedrock
+  // AgentCore Gateway can only front Lambdas that live in its own region (confirmed live — see
   // infra/gateway.ts's file comment), and the Gateway has to be in us-east-1 for the Web Search
   // connector target. `gmail`/`calendar`/`browser` read/write real state (OAuth tokens, the
   // workspace table, the AgentCore Browser resource) that stays in the home region — they get an
@@ -58,14 +92,25 @@ export function makeApi(args: {
   // Each of these calls out to Google's own APIs using the calling agent's own connected Google
   // account (see services/tools/gmail and services/tools/calendar's file comments) — no session
   // state between calls, so no `link: [table]` needed the way ToolBrowser has for its session
-  // cache. `STAGE` + the SSM permission below must match services/api/src/google-oauth.ts's path
-  // convention exactly.
+  // cache. `STAGE` + the session-policy ARN the handler builds from `ACCOUNT_ID`/`HOME_REGION`
+  // must match services/api/src/google-oauth.ts + connector-config.ts's path conventions exactly.
+  // No direct SSM grant — the token read goes through `ConnectorTokenReader` with a per-invocation
+  // session policy scoped to the calling agent's own parameter (see that role's comment above and
+  // services/tools/gmail/src/google-token.ts). `ACCOUNT_ID`/`HOME_REGION` let the handler build the
+  // exact parameter ARN for that session policy; `CONNECTOR_TOKEN_READER_ROLE_ARN` is the role to
+  // assume.
+  const toolConnectorEnv = {
+    STAGE: $app.stage,
+    HOME_REGION: region,
+    ACCOUNT_ID: accountId,
+    CONNECTOR_TOKEN_READER_ROLE_ARN: connectorTokenReaderRole.arn,
+  };
   const toolGmail = new sst.aws.Function(
     "ToolGmail",
     {
       handler: "services/tools/gmail/src/handler.handler",
-      environment: { STAGE: $app.stage, HOME_REGION: region },
-      permissions: [{ actions: ["ssm:GetParameter"], resources: [googleWorkspaceSsmArnPattern, googleOAuthClientSsmArnPattern] }],
+      environment: toolConnectorEnv,
+      permissions: [{ actions: ["sts:AssumeRole"], resources: [connectorTokenReaderRole.arn] }],
     },
     { provider: toolsProvider },
   );
@@ -73,8 +118,8 @@ export function makeApi(args: {
     "ToolCalendar",
     {
       handler: "services/tools/calendar/src/handler.handler",
-      environment: { STAGE: $app.stage, HOME_REGION: region },
-      permissions: [{ actions: ["ssm:GetParameter"], resources: [googleWorkspaceSsmArnPattern, googleOAuthClientSsmArnPattern] }],
+      environment: toolConnectorEnv,
+      permissions: [{ actions: ["sts:AssumeRole"], resources: [connectorTokenReaderRole.arn] }],
     },
     { provider: toolsProvider },
   );
@@ -110,10 +155,6 @@ export function makeApi(args: {
   // existed and was linked to `toolBrowser` already, but nothing had ever told AgentCore to
   // actually write sessions there.
   const browser = new aws.bedrock.AgentcoreBrowser("ToolBrowserResource", {
-    // Unlike every other resource `name` in this repo, AgentcoreBrowser's `name` rejects hyphens
-    // — confirmed live: `ValidationException: Value 'fizz-robss-browser' at 'name' failed to
-    // satisfy constraint: Member must satisfy regular expression pattern: [a-zA-Z][a-zA-Z0-9_]{0,47}`.
-    name: `fizz_${$app.stage}_browser`,
     description: "Browser sessions driven by ToolBrowser (services/tools/browser-agentcore)",
     executionRoleArn: browserRole.arn,
     networkConfiguration: { networkMode: "PUBLIC" },
@@ -138,14 +179,180 @@ export function makeApi(args: {
           resources: ["*"],
         },
       ],
-      // playwright-core's bundle has a `require("chromium-bidi/...")` for its BiDi protocol
-      // support — a real code path in the package, but not one this handler ever exercises (it
-      // only uses `chromium.connectOverCDP`, never BiDi). `chromium-bidi` isn't installed
-      // anywhere in this repo (confirmed — no @chromium-bidi entry in the pnpm store) since
-      // nothing here needs it; esbuild still tries to statically resolve it while bundling and
-      // fails outright. Marking it external (not `nodejs.install`, which would require it to
-      // actually be installed) leaves it as a plain runtime `require` that's simply never called.
-      nodejs: { esbuild: { external: ["chromium-bidi"] } },
+      // playwright-core must not be bundled: its `package.ts` does
+      // `require(path.join(__dirname, "..", "package.json"))` at import time, and once esbuild
+      // inlines it into `.sst/artifacts/<Fn>/bundle.mjs` that resolves to `.sst/artifacts/
+      // package.json`, which doesn't exist ("Cannot find module .../.sst/artifacts/package.json").
+      // `install` keeps it as a real node_modules package (with its own package.json next to it)
+      // instead of inlining it. That also stops esbuild tracing playwright-core's internal
+      // `require("chromium-bidi/...")` (BiDi protocol support this handler never hits — it only
+      // uses `chromium.connectOverCDP`), so the old `external: ["chromium-bidi"]` hack is moot.
+      nodejs: { install: ["playwright-core"] },
+    },
+    { provider: toolsProvider },
+  );
+
+  // The actual clone/edit/test/push/PR work for the `github` tool used to run inline against a
+  // Bedrock AgentCore Code Interpreter session (the sibling of the AgentCore Browser resource
+  // above) — dropped after confirming live that sandbox has no `git` binary at all
+  // ("/bin/sh: line 1: git: command not found"). It's now a separate container-image Lambda
+  // (services/tools/github-coding-agent) invoked fire-and-forget by `ToolGithub`'s
+  // `start_coding_task` action: one isolated Firecracker microVM per coding task, real `git` in the
+  // image, everything in its own local `/tmp` — no cross-call session/DynamoDB bookkeeping needed
+  // any more (see services/tools/github/src/session.ts's removal). Reports back over EventBridge
+  // (subscription below) instead of a synchronous tool result, since the task can run for minutes —
+  // see services/tools/github/src/handler.ts's header comment for why that matters.
+  //
+  // Not a `toolsProvider` (us-east-1) Lambda: it isn't a Gateway MCP target, `ToolGithub` invokes it
+  // directly by ARN, so it just lives in the home region with everything else. Not in a VPC either
+  // — a coding task needs open outbound (git clone, npm install), which a VPC'd Lambda would need a
+  // NAT gateway for; skipping the VPC was the whole point of not using EFS/S3 Files for the
+  // checkout (see the design discussion this replaced — no cross-call filesystem to share when one
+  // invocation does the entire job).
+  //
+  // Built from a Dockerfile because git isn't available any other way in a Lambda runtime — see
+  // services/tools/github-coding-agent/Dockerfile's own header comment. `context` is the repo root
+  // (not the service directory) because the Dockerfile reaches up to the shared
+  // tsconfig.base.json, same as every package's own tsconfig.json does.
+  const codingAgentRepo = new aws.ecr.Repository("ToolGithubCodingAgentRepo", {
+    // ECR repository names must be lowercase (`[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*`) — Pulumi's
+    // auto-generated name preserves the resource's logical-name casing ("ToolGithubCodingAgent
+    // Repo-xxxxx"), which ECR rejects outright (confirmed live). Same class of constraint as
+    // AgentcoreBrowser/AgentcoreCodeInterpreter's `name` elsewhere in this file.
+    name: $interpolate`perch-${$app.stage}-github-coding-agent`,
+    forceDelete: true,
+  });
+  const codingAgentAuth = aws.ecr.getAuthorizationTokenOutput({ registryId: codingAgentRepo.registryId });
+  const codingAgentImage = new Image("ToolGithubCodingAgentImage", {
+    // `docker-build.Image` resolves relative paths against the Pulumi program's own cwd
+    // (`.sst/platform`), not the app root — confirmed live ("no such file or directory" looking
+    // under `.sst/platform/services/...`). `$cli.paths.root` is the app root every other relative
+    // path in this file (`services/tools/github/src/handler.handler`, etc.) gets resolved against
+    // implicitly by SST's own components; `docker-build.Image` isn't an SST component, so it needs
+    // that spelled out explicitly.
+    context: { location: $cli.paths.root },
+    dockerfile: { location: `${$cli.paths.root}/services/tools/github-coding-agent/Dockerfile` },
+    platforms: ["linux/amd64"],
+    tags: [$interpolate`${codingAgentRepo.repositoryUrl}:latest`],
+    // Plain `push: true` (implicit registry export) let BuildKit pick OCI media types for the
+    // pushed manifest, which Lambda's `CreateFunction` rejects outright — confirmed live
+    // ("Source image ... is not valid. Provide a valid source image."). Lambda container images
+    // require the older Docker V2 Schema 2 manifest format, so the actual push is done through an
+    // explicit `exports` entry with `ociMediaTypes: false` instead; the top-level `push` is a
+    // required field on `ImageArgs` but `false` here just means "don't ALSO add an implicit
+    // default export" — the explicit one below is what does the pushing.
+    push: false,
+    exports: [{ registry: { ociMediaTypes: false, push: true } }],
+    registries: [
+      {
+        address: codingAgentRepo.repositoryUrl,
+        username: codingAgentAuth.userName,
+        password: codingAgentAuth.password,
+      },
+    ],
+  });
+  const codingAgentRole = new aws.iam.Role("ToolGithubCodingAgentRole", {
+    assumeRolePolicy: $jsonStringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Principal: { Service: "lambda.amazonaws.com" }, Action: "sts:AssumeRole" }],
+    }),
+  });
+  const codingAgentLogging = new aws.iam.RolePolicyAttachment("ToolGithubCodingAgentLogging", {
+    role: codingAgentRole.name,
+    policyArn: "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+  });
+  const codingAgentPolicy = new aws.iam.RolePolicy("ToolGithubCodingAgentPolicy", {
+    role: codingAgentRole.id,
+    policy: $jsonStringify({
+      Version: "2012-10-17",
+      Statement: [
+        { Sid: "AssumeTokenReader", Effect: "Allow", Action: "sts:AssumeRole", Resource: connectorTokenReaderRole.arn },
+        // Reports its outcome by putting one event on the shared bus — see the
+        // CodingTaskCompletedSubscription below.
+        { Sid: "ReportOutcome", Effect: "Allow", Action: "events:PutEvents", Resource: bus.arn },
+        // Its own model calls — same Converse/ConverseStream grant `agentRuntime` has below, just
+        // scoped to whichever fixed model `CODING_AGENT_MODEL_ID` names.
+        {
+          Sid: "InvokeModel",
+          Effect: "Allow",
+          Action: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:Converse", "bedrock:ConverseStream"],
+          Resource: [$interpolate`arn:aws:bedrock:${region}::foundation-model/*`, $interpolate`arn:aws:bedrock:${region}:${accountId}:inference-profile/*`],
+        },
+      ],
+    }),
+  });
+  // `dependsOn` alone (below) only orders the *API calls* — IAM is eventually consistent, so
+  // `PutRolePolicy`/`AttachRolePolicy` returning success doesn't mean every AWS region/control
+  // plane has the change yet. This was the working theory for a `Source image ... is not valid`
+  // CreateFunction failure at one point, but turned out NOT to be that failure's actual cause —
+  // see the `imageUri` comment below for what really caused it (an `Image.ref` reference-format
+  // mismatch, unrelated to IAM). Kept anyway as a defensive buffer for a genuinely-fresh IAM role
+  // on a brand new stage's first deploy (the role in every test here had already existed for
+  // 15min+ by the time it was probed, so that specific race is still untested, not disproven).
+  const codingAgentIamPropagationDelay = new command.local.Command(
+    "ToolGithubCodingAgentIamPropagationDelay",
+    { create: "sleep 15" },
+    { dependsOn: [codingAgentLogging, codingAgentPolicy] },
+  );
+  const toolGithubCodingAgent = new aws.lambda.Function(
+    "ToolGithubCodingAgent",
+    {
+      role: codingAgentRole.arn,
+      packageType: "Image",
+      // NOT `.ref` — that's a convenience `repo:tag@digest` compound reference (documented as
+      // such on the `Image` resource), and Lambda's `ImageUri` parameter validation rejects that
+      // combined form outright as "not valid" (confirmed live: the exact image + role Lambda
+      // rejected via Pulumi created a real function instantly when passed a plain `repo@digest`
+      // reference by hand through the CLI — nothing wrong with the image, role, or IAM timing;
+      // this was a reference-format mismatch the whole time). `.digest` is the bare `sha256:...`
+      // value `.ref` is built from — use that for a strict `repo@digest` reference instead.
+      imageUri: $interpolate`${codingAgentRepo.repositoryUrl}@${codingAgentImage.digest}`,
+      architectures: ["x86_64"],
+      // A coding task's `npm ci` + a build + a test suite in one shot is well past the browser
+      // tool's 2 minutes; 15 minutes is the hard Lambda ceiling — see
+      // services/tools/github-coding-agent/src/handler.ts's header comment on that being an
+      // accepted v1 limit rather than something worked around yet.
+      timeout: 900,
+      memorySize: 2048,
+      ephemeralStorage: { size: 4096 },
+      environment: {
+        variables: {
+          ...toolConnectorEnv,
+          EVENT_BUS_NAME: bus.name,
+          // TODO: set to a real Bedrock model id before this ships — see this file's header
+          // comment on why it's a fixed env var rather than a per-agent choice.
+          CODING_AGENT_MODEL_ID: "",
+        },
+      },
+    },
+    // `role: codingAgentRole.arn` only makes Pulumi wait for the Role resource itself — the
+    // RolePolicy/RolePolicyAttachment that actually grant it permissions produce no output this
+    // function's args reference, so nothing implicitly orders them before it; depending on the
+    // delay (which itself depends on both) gets both the ordering and the propagation buffer.
+    { dependsOn: [codingAgentIamPropagationDelay] },
+  );
+
+  // One workspace-level GitHub access token (the `github` connector — see
+  // services/api/src/connector-config.ts, path `/perch/${stage}/${ws}/connectors/github/client`),
+  // read through the same `ConnectorTokenReader` assume-role + per-invocation session policy the
+  // gmail/calendar tools use — so this shared Lambda holds no standing SSM grant (see that role's
+  // comment above and services/tools/github/src/github-token.ts). `ConnectorTokenReaderPolicy`
+  // already covers the `.../connectors/*/client` family, so no IAM change was needed for the read.
+  const toolGithub = new sst.aws.Function(
+    "ToolGithub",
+    {
+      handler: "services/tools/github/src/handler.handler",
+      environment: {
+        ...toolConnectorEnv,
+        CODING_AGENT_FUNCTION_NAME: toolGithubCodingAgent.name,
+      },
+      permissions: [
+        { actions: ["sts:AssumeRole"], resources: [connectorTokenReaderRole.arn] },
+        // Fire-and-forget kickoff of the coding-agent Lambda above — cross-region is fine for a
+        // plain Invoke call (this Lambda deploys via `toolsProvider`/us-east-1, the coding agent
+        // lives in the home region); its own SDK client is pinned to HOME_REGION to reach it.
+        { actions: ["lambda:InvokeFunction"], resources: [toolGithubCodingAgent.arn] },
+      ],
     },
     { provider: toolsProvider },
   );
@@ -157,12 +364,27 @@ export function makeApi(args: {
   // (there used to be one, services/tools/gateway-caller, removed once agent-runtime started
   // connecting directly; there used to be two Gateways too, merged into this one — see
   // infra/gateway.ts's file comment for why that required moving these 4 Lambdas to us-east-1).
-  const gateway = makeGateway({ toolHttpFetch, toolGmail, toolCalendar, toolBrowser });
+  const gateway = makeGateway({ toolHttpFetch, toolGmail, toolCalendar, toolBrowser, toolGithub });
 
   // sst.aws.Workflow (not a plain Function) is required for AWS Lambda durable execution: the
   // DurableConfig it sets is baked in at function *creation* and AWS has no API to add it after
   // the fact (confirmed via a failed `update-function-configuration --durable-config` call against
   // the old plain-Function version of this resource — see infra/README.md's now-resolved note).
+  // `agentRuntime`'s own `create_reminder` tool (services/agent-runtime/src/reminders.ts) needs
+  // these three to create an EventBridge Scheduler `at()` schedule directly, the same way
+  // `makeRoutineScheduling` (below) does for a human-authored recurring schedule. Can't just wait
+  // for `routineScheduling`'s outputs — its `procedureScheduler` Function links `agentRuntime`, so
+  // `agentRuntime` has to be constructed first, and these three ARNs are exactly what
+  // `agentRuntime`'s own definition needs from that not-yet-created resource. Broken by computing
+  // each as a plain interpolated string instead of a resource-object dependency — safe only
+  // because `infra/schedule.ts` gives `ProcedureScheduler`/`RoutineSchedulerInvokeRole` these
+  // exact explicit names (see that file's comment); the schedule group's name was already
+  // explicit. `makeRoutineScheduling` still creates the real resources below — this doesn't
+  // duplicate them, it just knows their names ahead of time.
+  const routineScheduleGroupName = $interpolate`perch-${$app.stage}-routines`;
+  const procedureSchedulerArn = $interpolate`arn:aws:lambda:${region}:${accountId}:function:perch-${$app.stage}-procedure-scheduler`;
+  const routineSchedulerRoleArn = $interpolate`arn:aws:iam::${accountId}:role/perch-${$app.stage}-routine-scheduler-invoke`;
+
   const agentRuntime = new sst.aws.Workflow("AgentRuntime", {
     handler: "services/agent-runtime/src/handler.handler",
     // Per-invocation cap, not a per-step or total-execution cap — a single reasoning turn with
@@ -181,8 +403,28 @@ export function makeApi(args: {
       // the Gateway URL itself.
       TOOL_GATEWAY_URL: gateway.gatewayUrl,
       AGENT_MEMORY_BUCKET_NAME: agentMemoryBucket.name,
+      // Routine replay (services/agent-runtime/src/procedure.ts) drives the same AgentCore browser
+      // resource directly over CDP, and resolves `secret:` step values from SSM.
+      AGENTCORE_BROWSER_ID: browser.browserId,
+      HOME_REGION: region,
+      // `create_reminder` tool (services/agent-runtime/src/reminders.ts) — see this file's comment
+      // above `routineScheduleGroupName` for why these are plain interpolated strings, not `.name`/
+      // `.arn` off `routineScheduling`.
+      ROUTINE_SCHEDULE_GROUP: routineScheduleGroupName,
+      ROUTINE_SCHEDULER_FUNCTION_ARN: procedureSchedulerArn,
+      ROUTINE_SCHEDULER_ROLE_ARN: routineSchedulerRoleArn,
+      STAGE: $app.stage,
     },
+    // Keep playwright-core out of the bundle — same reason as ToolBrowser above (its `package.ts`
+    // requires a sibling `package.json` at import time, which breaks once inlined into the
+    // artifact bundle). Routine replay only uses `chromium.connectOverCDP`, never BiDi.
+    nodejs: { install: ["playwright-core"] },
     permissions: [
+      {
+        actions: ["bedrock-agentcore:StartBrowserSession", "bedrock-agentcore:StopBrowserSession", "bedrock-agentcore:GetBrowserSession", "bedrock-agentcore:ConnectBrowserAutomationStream"],
+        resources: ["*"],
+      },
+      { actions: ["ssm:GetParameter"], resources: [procedureSecretSsmArnPattern] },
       // These two grants used to sit on the now-deleted services/tools/gateway-caller and
       // services/tools/web-search shim Lambdas — moved onto agentRuntime directly since it's now
       // the one making the MCP calls (see services/agent-runtime/src/mcp-gateways.ts).
@@ -215,8 +457,17 @@ export function makeApi(args: {
         actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:Converse", "bedrock:ConverseStream"],
         resources: [$interpolate`arn:aws:bedrock:${region}::foundation-model/*`, $interpolate`arn:aws:bedrock:${region}:${accountId}:inference-profile/*`],
       },
+      // `create_reminder` — same `scheduler:CreateSchedule`/`iam:PassRole` shape `api` gets below
+      // for the human-authored path, scoped to the same schedule group.
+      {
+        actions: ["scheduler:CreateSchedule"],
+        resources: [$interpolate`arn:aws:scheduler:${region}:${accountId}:schedule/perch-${$app.stage}-routines/*`],
+      },
+      { actions: ["iam:PassRole"], resources: [routineSchedulerRoleArn] },
     ],
   });
+
+  const routineScheduling = makeRoutineScheduling({ table, bus, agentRuntime });
 
   const api = new sst.aws.Function("ApiFunction", {
     handler: "services/api/src/handler.handler",
@@ -232,16 +483,31 @@ export function makeApi(args: {
       // services/api/src/okf-store.ts and services/api/src/routers/knowledge.ts).
       AGENT_MEMORY_BUCKET_NAME: agentMemoryBucket.name,
       STAGE: $app.stage,
+      HOME_REGION: region,
+      // Routines: start/stop the recording browser session, async-invoke the recorder, and
+      // create/update/delete one EventBridge Scheduler schedule per scheduled routine.
+      ROUTINE_SCHEDULE_GROUP: routineScheduling.scheduleGroupName,
+      ROUTINE_SCHEDULER_FUNCTION_ARN: routineScheduling.procedureSchedulerArn,
+      ROUTINE_SCHEDULER_ROLE_ARN: routineScheduling.schedulerRoleArn,
     },
-    // Scoped to exactly the per-agent Google Workspace refresh-token path convention and the
-    // workspace-level OAuth client config path (see services/api/src/google-oauth.ts) — this
-    // function can create/read/delete only those two parameter families, not arbitrary SSM
-    // parameters in the account.
+    // Scoped to exactly the per-workspace connector client config path and the per-agent connector
+    // token path (see services/api/src/connector-config.ts + google-oauth.ts) — this function can
+    // create/read/delete only those two parameter families, not arbitrary SSM parameters.
     permissions: [
-      { actions: ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter"], resources: [googleWorkspaceSsmArnPattern, googleOAuthClientSsmArnPattern] },
+      { actions: ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter"], resources: [connectorAgentTokenSsmArnPattern, connectorClientSsmArnPattern, procedureSecretSsmArnPattern] },
       // `GET /models` lists the account's on-demand Bedrock models (services/api/src/routers/models.ts).
       // ListFoundationModels has no resource-level scoping, so it's `*`.
       { actions: ["bedrock:ListFoundationModels"], resources: ["*"] },
+      // Scheduling: one EventBridge Scheduler schedule per scheduled Routine *and* per enabled
+      // agent `{kind:"schedule"}` trigger (services/api/src/{procedures,schedule}-support.ts), all
+      // in the one dedicated group, plus passing the target-invoke role to Scheduler.
+      {
+        actions: ["scheduler:CreateSchedule", "scheduler:UpdateSchedule", "scheduler:DeleteSchedule", "scheduler:GetSchedule"],
+        resources: [$interpolate`arn:aws:scheduler:${region}:${accountId}:schedule/perch-${$app.stage}-routines/*`],
+      },
+      // ListSchedules (used to reconcile an agent's schedules by name prefix) has no resource-level scoping.
+      { actions: ["scheduler:ListSchedules"], resources: ["*"] },
+      { actions: ["iam:PassRole"], resources: [routineScheduling.schedulerRoleArn] },
     ],
   });
 
@@ -261,9 +527,6 @@ export function makeApi(args: {
     name: "openauth",
     requestFunction: {
       handler: "services/api/src/authorizer.handler",
-      // restApi.url has a trailing slash — interpolating it straight in produces a double
-      // slash ("/robss//auth"), which breaks path-prefix comparisons downstream in
-      // authorizer.ts. Strip it first.
       environment: { OPENAUTH_ISSUER_URL: restApi.url.apply((url) => `${url.replace(/\/+$/, "")}/auth`) },
     },
     identitySource: "method.request.header.Authorization",
@@ -282,5 +545,18 @@ export function makeApi(args: {
   });
   auditQueue.subscribe(auditWriter.arn, { batch: { size: 1 } });
 
-  return { restApi, api, authIssuer, agentRuntime, auditWriter, toolHttpFetch, toolBrowser, toolGmail, toolCalendar };
+  // Reports a `start_coding_task` run's outcome into the channel it started from — see
+  // services/agent-runtime/src/coding-task-events.ts and services/tools/github-coding-agent's
+  // handler.ts, which puts this event once its clone/edit/test/push/PR loop finishes.
+  bus.subscribe(
+    "CodingTaskCompletedSubscription",
+    {
+      handler: "services/agent-runtime/src/coding-task-events.handler",
+      link: [table],
+      environment: { WORKSPACE_TABLE_NAME: table.name },
+    },
+    { pattern: { source: ["workspace.github-coding-agent"], detailType: ["coding-task.completed"] } },
+  );
+
+  return { restApi, api, authIssuer, agentRuntime, auditWriter, toolHttpFetch, toolBrowser, toolGmail, toolCalendar, toolGithub, toolGithubCodingAgent };
 }

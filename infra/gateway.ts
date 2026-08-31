@@ -4,7 +4,7 @@ import * as command from "@pulumi/command";
 
 /**
  * The single Bedrock AgentCore Gateway for every tool this app has — http_fetch/gmail/calendar/
- * browser as `lambda`-type MCP targets, plus AWS's managed Web Search connector. `services/
+ * browser/github as `lambda`-type MCP targets, plus AWS's managed Web Search connector. `services/
  * agent-runtime` (see its `mcp-gateways.ts`) talks native MCP straight to this one Gateway via
  * `@strands-agents/sdk`'s `McpClient` — no shim Lambda in between (there used to be one,
  * services/tools/gateway-caller, removed once agent-runtime started connecting directly).
@@ -111,11 +111,12 @@ export const TOOL_TARGETS: Record<string, string> = {
   gmail: "gmail",
   calendar: "calendar",
   browser: "browser",
+  github: "github",
 };
 
 const GATEWAY_REGION = "us-east-1";
 
-/** All 4 tool Lambdas (infra/api.ts) deploy via this provider so they live in the same region as
+/** All the tool Lambdas (infra/api.ts) deploy via this provider so they live in the same region as
  * this Gateway — see this file's header comment for why that's required, not optional. */
 export const toolsProvider = new aws.Provider("ToolsUsEast1", { region: GATEWAY_REGION });
 
@@ -205,13 +206,41 @@ const browserInputSchema: ToolInputSchema = {
   ],
 };
 
+const githubInputSchema: ToolInputSchema = {
+  type: "object",
+  description: "Arguments for the github tool — fields apply only to the action named in their description",
+  properties: [
+    {
+      name: "action",
+      type: "string",
+      required: true,
+      description: 'One of "create_issue", "open_pull_request", "pr_comment", "start_coding_task"',
+    },
+    { name: "owner", type: "string", description: "repo owner (org or user) — defaults to the connector's configured default owner" },
+    { name: "repo", type: "string", description: "repository name — required for every action" },
+    { name: "title", type: "string", description: "create_issue: issue title; open_pull_request: PR title" },
+    { name: "body", type: "string", description: "create_issue / open_pull_request: body text; pr_comment: comment text" },
+    { name: "prNumber", type: "integer", description: "pr_comment only — the pull request number" },
+    { name: "branch", type: "string", description: "open_pull_request: head branch; start_coding_task: new branch to create the work on" },
+    { name: "baseBranch", type: "string", description: "open_pull_request / start_coding_task — base branch to target; defaults to the repo default branch" },
+    {
+      name: "instructions",
+      type: "string",
+      description:
+        "start_coding_task only — describe the change to make; a separate coding agent clones the repo, makes the " +
+        "change, runs tests, and opens a PR, then reports back in this channel when it's done (this call returns immediately)",
+    },
+  ],
+};
+
 export function makeGateway(args: {
   toolHttpFetch: sst.aws.Function;
   toolGmail: sst.aws.Function;
   toolCalendar: sst.aws.Function;
   toolBrowser: sst.aws.Function;
+  toolGithub: sst.aws.Function;
 }) {
-  const { toolHttpFetch, toolGmail, toolCalendar, toolBrowser } = args;
+  const { toolHttpFetch, toolGmail, toolCalendar, toolBrowser, toolGithub } = args;
   const accountId = aws.getCallerIdentityOutput({}).accountId;
   // Wildcard on purpose: this also becomes the RoleTrust policy's aws:SourceArn condition below,
   // so it can't reference the gateway's own (not-yet-known) id without a dependency cycle.
@@ -251,7 +280,7 @@ export function makeGateway(args: {
             Sid: "InvokeToolLambdas",
             Effect: "Allow",
             Action: "lambda:InvokeFunction",
-            Resource: [toolHttpFetch.arn, toolGmail.arn, toolCalendar.arn, toolBrowser.arn],
+            Resource: [toolHttpFetch.arn, toolGmail.arn, toolCalendar.arn, toolBrowser.arn, toolGithub.arn],
           },
           { Sid: "InvokeGateway", Effect: "Allow", Action: "bedrock-agentcore:InvokeGateway", Resource: gatewayArnPattern },
           { Sid: "InvokeWebSearch", Effect: "Allow", Action: "bedrock-agentcore:InvokeWebSearch", Resource: WEB_SEARCH_TOOL_ARN },
@@ -264,7 +293,7 @@ export function makeGateway(args: {
   const gateway = new aws.bedrock.AgentcoreGateway(
     "Gateway",
     {
-      name: "fizz-tools",
+      name: "perch-tools",
       protocolType: "MCP",
       // SigV4, not an OAuth/JWT authorizer — matches how agent-runtime calls in (its own execution
       // role's IAM permissions, not a bearer token).
@@ -325,6 +354,15 @@ export function makeGateway(args: {
       "visible text. Slower and heavier than web_search or http_fetch; use it only when a page needs real " +
       "interaction or JS rendering that a plain fetch can't get you. The session is recorded for review.",
     browserInputSchema,
+  );
+  makeTarget(
+    "GatewayTargetGithub",
+    "github",
+    toolGithub.arn,
+    "Work with a GitHub repository: create an issue, comment on a pull request, or hand off a coding task " +
+      "(clone, edit, test, commit, push, open a PR) to a separate coding agent that reports back in this channel " +
+      "when it's done. Uses the workspace's configured GitHub access token; issues/PRs are attributed to its owner.",
+    githubInputSchema,
   );
 
   // The Web Search target can't use aws.bedrock.AgentcoreGatewayTarget (its TypeScript union type

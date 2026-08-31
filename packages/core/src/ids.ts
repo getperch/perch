@@ -17,6 +17,7 @@ export const runStepId = idSchema;
 export const taskId = idSchema;
 export const approvalId = idSchema;
 export const auditEventId = idSchema;
+export const procedureId = idSchema;
 
 export type WorkspaceId = z.infer<typeof workspaceId>;
 export type ChannelId = z.infer<typeof channelId>;
@@ -27,3 +28,4 @@ export type RunStepId = z.infer<typeof runStepId>;
 export type TaskId = z.infer<typeof taskId>;
 export type ApprovalId = z.infer<typeof approvalId>;
 export type AuditEventId = z.infer<typeof auditEventId>;
+export type ProcedureId = z.infer<typeof procedureId>;

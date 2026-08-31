@@ -1,9 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import type { Member } from "@fizz/core";
+import type { Member } from "@perch/core";
 import { Avatar } from "./primitives/Avatar.js";
 import { Button } from "./primitives/Button.js";
 import { color, font, radius } from "./tokens.js";
-import { mentionTokenFor, paletteFor } from "./utils.js";
+import { avatarColorsFor, mentionTokenFor } from "./utils.js";
 import { detectMention } from "./screens/ChatScreen.js";
 
 type MentionState = { start: number; query: string; index: number };
@@ -146,7 +146,7 @@ export function NewDirectMessageModal({
                 }}
               >
                 {candidates.map((m, i) => {
-                  const pal = paletteFor(m.id);
+                  const pal = avatarColorsFor(m);
                   return (
                     <button
                       key={m.id}

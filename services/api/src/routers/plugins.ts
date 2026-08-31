@@ -2,8 +2,8 @@ import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { agentToPlugin, member as memberSchema, pluginIndex, pluginManifest, type PluginIndexEntry } from "@fizz/core";
-import { plugins as contract } from "@fizz/api-contract";
+import { agentToPlugin, member as memberSchema, pluginIndex, pluginManifest, type PluginIndexEntry } from "@perch/core";
+import { plugins as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
@@ -155,11 +155,52 @@ pluginsApp.openapi(
 );
 
 /**
+ * Turns whatever a user pasted into the URL of a `plugin.json`, so they can hand us a normal
+ * GitHub page rather than hunting for the raw path. Accepts:
+ *   - a GitHub repo or dir page: https://github.com/{owner}/{repo}[/tree/{ref}[/{path}]]
+ *   - a GitHub file link:        https://github.com/{owner}/{repo}/blob/{ref}/{path}/plugin.json
+ *   - a direct raw file:         https://…/plugin.json
+ *   - a directory on any host:   https://…/some/dir  (→ https://…/some/dir/plugin.json)
+ * SKILL.md files are then fetched relative to whatever this returns (see the import route).
+ */
+export function resolvePluginManifestUrl(input: string): URL {
+  let u: URL;
+  try {
+    u = new URL(input.trim());
+  } catch {
+    throw new Error(`"${input}" is not a valid URL`);
+  }
+
+  if (u.hostname === "github.com" || u.hostname === "www.github.com") {
+    const [owner, repo, kind, ref, ...rest] = u.pathname.split("/").filter(Boolean);
+    if (!owner || !repo) {
+      throw new Error("expected a GitHub URL like https://github.com/owner/repo or …/tree/main/path");
+    }
+    // Bare repo → default branch (raw resolves `HEAD` to it), manifest at the repo root.
+    if (!kind) return new URL(`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/plugin.json`);
+    if (kind !== "tree" && kind !== "blob") {
+      throw new Error(`can't import from a GitHub "${kind}" URL — link the repo, or a /tree/<branch>/<path>`);
+    }
+    const path = rest.join("/");
+    // /blob/ always names a file; if it's the manifest itself, use it directly.
+    if (kind === "blob" && path.toLowerCase().endsWith(".json")) {
+      return new URL(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`);
+    }
+    return new URL("plugin.json", `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path ? `${path}/` : ""}`);
+  }
+
+  // Non-GitHub: a direct .json is taken as-is; anything else is treated as a directory.
+  if (u.pathname.toLowerCase().endsWith(".json")) return u;
+  if (!u.pathname.endsWith("/")) u.pathname += "/";
+  return new URL("plugin.json", u);
+}
+
+/**
  * "Import from URL…" in the Add member -> Agent screen's plugin picker — pulls a plugin.json +
- * its SKILL.md from outside this fizz instance (e.g. a plugin published by someone else's
- * deployment, or a plain agent-plugins.org registry). Restricted to hosts the workspace has
- * explicitly trusted (Settings -> Trusted plugin registries), on top of ssrf-guard's baseline
- * hardening — this endpoint fetches a URL the caller supplies, so both layers matter.
+ * its SKILL.md from outside this perch instance (e.g. a plugin published by someone else's
+ * deployment, a GitHub repo, or a plain agent-plugins.org registry). The URL the caller supplies
+ * is fetched server-side, so ssrf-guard's baseline hardening (https-only, no private/link-local
+ * targets, capped size, redirect limit) is the security boundary here.
  */
 pluginsApp.openapi(
   createRoute({
@@ -169,23 +210,13 @@ pluginsApp.openapi(
     responses: { 200: { content: { "application/json": { schema: contract.importOutput } }, description: "OK" } },
   }),
   async (c) => {
-    const ctx = ctxOf(c);
     const { url } = c.req.valid("json");
-
-    const workspaceRes = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `WORKSPACE#${ctx.workspaceId}`, sk: "META" } }));
-    if (!workspaceRes.Item) throw new HTTPException(404, { message: `workspace ${ctx.workspaceId} not found` });
-    const trusted: string[] = workspaceRes.Item.workspace.trustedPluginRegistries ?? [];
 
     let manifestUrl: URL;
     try {
-      manifestUrl = new URL(url);
-    } catch {
-      throw new HTTPException(400, { message: `"${url}" is not a valid URL` });
-    }
-    if (!trusted.includes(manifestUrl.hostname)) {
-      throw new HTTPException(403, {
-        message: `"${manifestUrl.hostname}" is not a trusted plugin registry for this workspace — add it in Settings first`,
-      });
+      manifestUrl = resolvePluginManifestUrl(url);
+    } catch (err) {
+      throw new HTTPException(400, { message: (err as Error).message });
     }
 
     try {

@@ -1,0 +1,103 @@
+name: Desktop release
+
+# Tagged release builds of the Tauri desktop app for Windows and macOS. Push a
+# `v*` tag (e.g. `v0.2.0`) and this builds a signed-by-nobody installer per
+# platform and attaches them to a GitHub Release (created as a draft — review the
+# artefacts, then publish). `workflow_dispatch` is for smoke-testing the pipeline;
+# it still needs a ref that looks like a tag for the version-sync step to fire.
+#
+# Linux is intentionally out of scope here — add a fourth matrix leg if that changes.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      # tauri-action creates the Release and uploads assets through the API.
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple silicon. macos-14 is arm64, so this is a native build.
+          - platform: macos-14
+            rust-target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          # Intel macs. macos-13 is the last x86_64 runner image.
+          - platform: macos-13
+            rust-target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          # Windows x64.
+          - platform: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same note as android.yml: no `version:` — pnpm/action-setup@v4 reads the
+      # `packageManager` pin in package.json, and passing both errors out.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+          # Cache key needs the target in it or the two macOS legs collide.
+          key: ${{ matrix.rust-target }}
+
+      # Drive the app version from the tag so `v0.2.0` ships as 0.2.0 rather than
+      # whatever is stale in tauri.conf.json. `shell: bash` is available on the
+      # Windows runner (Git bash), so one script covers all three legs.
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            for (const f of ["apps/desktop/src-tauri/tauri.conf.json", "apps/desktop/package.json"]) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8"));
+              j.version = v;
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }
+          ' "$v"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          # The default tauri.conf.json build runs `pnpm sidecar:build`, which on
+          # each runner produces the Playwright sidecar for that leg's target
+          # triple; Tauri bundles it into the installer as an externalBin, so the
+          # runner ships *inside* the .dmg / .msi — nothing to fetch or install at
+          # runtime. The unfinished UI features are still compiled out: a
+          # production `vite build` resolves `canvases` and `routines` to their
+          # `prod: false` baseline in packages/core/src/flags.ts.
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_name }}
+          releaseName: Perch ${{ github.ref_name }}
+          # Draft until a human publishes — nothing here is code-signed or
+          # notarised yet, so the download will trip Gatekeeper / SmartScreen.
+          releaseDraft: true
+          prerelease: false

@@ -1,6 +1,6 @@
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import { models as contract } from "@fizz/api-contract";
+import { models as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 
 export const modelsApp = new OpenAPIHono<AppEnv>();

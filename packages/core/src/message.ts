@@ -1,5 +1,17 @@
 import { z } from "zod";
+import { a2uiActionId, a2uiCard } from "./a2ui.js";
 import { channelId, memberId, messageId, runId, workspaceId } from "./ids.js";
+
+/** Stamped on the synthetic user message a client posts when someone clicks a `Button` / submits
+ * a `Form` on an agent's A2UI card. Lets the chat render a compact "⚡ <label>" chip instead of
+ * the raw `[ui-action] …` prompt string the agent receives. See `POST /channels/{id}/a2ui-actions`. */
+export const a2uiActionRef = z.object({
+  sourceMessageId: messageId,
+  actionId: a2uiActionId,
+  label: z.string(),
+  value: z.string().optional(),
+});
+export type A2uiActionRef = z.infer<typeof a2uiActionRef>;
 
 export const toolCall = z.object({
   name: z.string(),
@@ -49,6 +61,13 @@ export const message = z.object({
   tools: z.array(toolCall).default([]),
   artifact: artifactRef.optional(),
   citations: z.array(citation).default([]),
+  /** A declarative UI card an agent rendered via the `render_ui` tool — drawn by `@perch/ui`'s
+   * `A2uiBlock` alongside (or instead of) `text`. Shallow on the wire (`a2uiCard`); the renderer
+   * re-parses it against the strict `a2uiDocument` before drawing. See `a2ui.ts`. */
+  a2ui: a2uiCard.optional(),
+  /** Present on the synthetic user message posted when someone acts on an A2UI card (Button /
+   * Form). The chat renders this as a compact chip; `text` carries the agent-facing prompt. */
+  a2uiAction: a2uiActionRef.optional(),
   approval: approvalRequestSummary.optional(),
   reactions: z.array(reaction).default([]),
   createdAt: z.string().datetime(),

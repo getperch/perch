@@ -1,33 +1,20 @@
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, State};
+use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
-use crate::api::google_workspace as gw_api;
-use crate::api::types::{DeleteMembersAgentsMemberIdGoogleWorkspaceResponse, PostMembersAgentsMemberIdGoogleWorkspaceConnectRequest, PostMembersAgentsMemberIdGoogleWorkspaceConnectResponse};
-
-/// Distinct redirect path from `auth.rs`'s own `fizz://callback` (that one's for signing into
-/// this app itself) so `apps/desktop/src/main.tsx`'s deep-link handler can tell the two flows
-/// apart and route each to its own completion command.
-const REDIRECT_URI: &str = "fizz://google-workspace-callback";
-
-/// Minimal, genuinely useful scope set: read + send Gmail, and full calendar access (needed to
-/// create events, not just read them). Not `gmail.modify` — this repo doesn't build label/triage
-/// support yet, no reason to ask for more than the two tools (services/tools/gmail,
-/// services/tools/calendar) actually use.
-const SCOPES: &str = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events";
-
-/// Holds the PKCE verifier + the agent (`memberId`) this connect flow is for between
-/// `begin_google_connect` opening the browser and `complete_google_connect` finishing the
-/// exchange — same pattern as `auth.rs`'s `PendingVerifier`, just also carrying which agent this
-/// connection belongs to, since (unlike this app's own sign-in) there can be many independent
-/// Google connections, one per agent.
-#[derive(Default)]
-pub struct PendingGoogleVerifier(Mutex<Option<(String, String)>>);
+use crate::api::connectors as gw_api;
+use crate::api::types::{
+    DeleteMembersAgentsMemberIdConnectorsConnectorIdResponse, PostMembersAgentsMemberIdConnectorsConnectorIdConnectRequest,
+    PostMembersAgentsMemberIdConnectorsConnectorIdConnectResponse,
+};
 
 fn generate_pkce() -> (String, String) {
     let mut bytes = [0u8; 64];
@@ -37,74 +24,109 @@ fn generate_pkce() -> (String, String) {
     (verifier, challenge)
 }
 
-/// Starts the PKCE flow for connecting `member_id`'s (an agent's) own Google Workspace. Fetches
-/// the OAuth client id from the backend (see `api/google_workspace.rs`'s `google_workspace_client_id`)
-/// rather than hardcoding it — this workspace has no real client id until a workspace admin
-/// configures it via Settings → Integrations (`google_workspace_save_client`), and fetching it at
-/// connect-time means an already-installed app picks up that value with no rebuild once it's set.
+/// Connects `member_id`'s (an agent's) own Google Workspace via the OAuth **loopback** flow — the
+/// only installed-app redirect Google still accepts for a "Desktop app" client (custom URI schemes
+/// like `perch://…` now fail with `Error 400: invalid_request`). Binds a throwaway
+/// `http://127.0.0.1:<port>` listener, opens the consent screen in the system browser, waits for
+/// Google to redirect back with `?code=…`, and hands the code to the backend for the token
+/// exchange (which holds the client secret — this binary never does).
 #[tauri::command]
-pub async fn begin_google_connect(app: AppHandle, pending: State<'_, PendingGoogleVerifier>, member_id: String) -> Result<(), String> {
-    let client_id = gw_api::google_workspace_client_id(app.clone()).await?.client_id;
+pub async fn begin_google_connect(
+    app: AppHandle,
+    member_id: String,
+) -> Result<PostMembersAgentsMemberIdConnectorsConnectorIdConnectResponse, String> {
+    let authorize = gw_api::google_workspace_authorize(app.clone(), member_id.clone()).await?;
+    let scopes = authorize.scopes.join(" ");
     let (verifier, challenge) = generate_pkce();
+
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("couldn't open a local callback port: {e}"))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let redirect_uri = format!("http://127.0.0.1:{port}");
 
     let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth").map_err(|e| e.to_string())?;
     url.query_pairs_mut()
-        .append_pair("client_id", &client_id)
-        .append_pair("redirect_uri", REDIRECT_URI)
+        .append_pair("client_id", &authorize.client_id)
+        .append_pair("redirect_uri", &redirect_uri)
         .append_pair("response_type", "code")
-        .append_pair("scope", SCOPES)
-        // Without both of these, Google only returns a refresh_token on the very first consent
-        // ever granted for this client+account — every reconnect after a disconnect would silently
-        // fail to get one (see google-oauth.ts's `exchangeGoogleAuthCode` on the backend, which
-        // treats a missing refresh_token as an error rather than pretending the connection worked).
+        .append_pair("scope", &scopes)
+        // Both are needed or Google only issues a refresh_token on the very first consent for this
+        // client+account (see google-oauth.ts's `exchangeGoogleAuthCode`, which treats a missing
+        // refresh_token as an error rather than a silent partial success).
         .append_pair("access_type", "offline")
         .append_pair("prompt", "consent")
         .append_pair("code_challenge_method", "S256")
         .append_pair("code_challenge", &challenge);
 
-    *pending.0.lock().unwrap() = Some((member_id, verifier));
+    app.opener().open_url(url.to_string(), None::<&str>).map_err(|e| e.to_string())?;
 
-    app.opener().open_url(url.to_string(), None::<&str>).map_err(|e| e.to_string())
-}
+    let code = tokio::task::spawn_blocking(move || wait_for_code(listener))
+        .await
+        .map_err(|e| e.to_string())??;
 
-/// Finishes the flow once `fizz://google-workspace-callback?code=...` comes back — routed here
-/// (instead of `auth::complete_sign_in`) by `apps/desktop/src/main.tsx` based on the callback
-/// URL's host. Posts the code + PKCE verifier to the backend, which does the actual token
-/// exchange with Google (has the client_secret — this binary never does) and returns the
-/// connected account's email for display.
-#[tauri::command]
-pub async fn complete_google_connect(
-    app: AppHandle,
-    pending: State<'_, PendingGoogleVerifier>,
-    callback_url: String,
-) -> Result<PostMembersAgentsMemberIdGoogleWorkspaceConnectResponse, String> {
-    let code = Url::parse(&callback_url)
-        .ok()
-        .and_then(|u| u.query_pairs().find(|(k, _)| k == "code").map(|(_, v)| v.into_owned()))
-        .ok_or("That URL doesn't look like a Google Workspace callback — no code found")?;
-
-    let (member_id, verifier) = pending
-        .0
-        .lock()
-        .unwrap()
-        .take()
-        .ok_or("No Google Workspace connection in progress — click \"Connect Gmail & Calendar\" first")?;
-
-    // typify (build.rs) generates a validated newtype — not a plain String — for any OpenAPI
-    // string schema with a `minLength` constraint (all three fields here are `z.string().min(1)`
-    // on the services/api side), each with a `FromStr` impl that re-checks that constraint.
-    let request = PostMembersAgentsMemberIdGoogleWorkspaceConnectRequest {
+    // typify (build.rs) generates validated newtypes for the `z.string().min(1)` fields — each
+    // `FromStr` re-checks the constraint.
+    let request = PostMembersAgentsMemberIdConnectorsConnectorIdConnectRequest {
         code: code.parse().map_err(|e: crate::api::types::error::ConversionError| e.to_string())?,
-        redirect_uri: REDIRECT_URI.parse().map_err(|e: crate::api::types::error::ConversionError| e.to_string())?,
+        redirect_uri: redirect_uri.parse().map_err(|e: crate::api::types::error::ConversionError| e.to_string())?,
         code_verifier: verifier.parse().map_err(|e: crate::api::types::error::ConversionError| e.to_string())?,
     };
     gw_api::google_workspace_connect(app, member_id, request).await
 }
 
-/// Self-serve disconnect: deletes this agent's stored Google refresh token + connection metadata
-/// on the backend. No local state to clear on this side — the PKCE verifier stash is per-connect-
-/// attempt and already consumed by the time a connection exists to disconnect.
+/// Blocks (on a worker thread) until Google's browser redirect hits the loopback listener, then
+/// returns the `code` query param. Serves a tiny "you can close this tab" page. 5-minute cap.
+fn wait_for_code(listener: TcpListener) -> Result<String, String> {
+    listener.set_nonblocking(true).ok();
+    let deadline = Instant::now() + Duration::from_secs(300);
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+                let mut line = String::new();
+                BufReader::new(&stream).read_line(&mut line).map_err(|e| e.to_string())?;
+                // "GET /?code=…&scope=… HTTP/1.1"
+                let target = line.split_whitespace().nth(1).unwrap_or("/");
+                let parsed = Url::parse(&format!("http://127.0.0.1{target}")).map_err(|e| e.to_string())?;
+                let params: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+
+                let ok = params.contains_key("code");
+                let body = if ok {
+                    "<!doctype html><meta charset=utf-8><body style=\"font:16px system-ui;padding:48px\">Connected. You can close this tab and return to Perch.</body>"
+                } else {
+                    "<!doctype html><meta charset=utf-8><body style=\"font:16px system-ui;padding:48px\">Sign-in failed or was cancelled. You can close this tab.</body>"
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.flush();
+
+                if let Some(err) = params.get("error") {
+                    return Err(format!("Google returned an error: {err}"));
+                }
+                return params
+                    .get("code")
+                    .cloned()
+                    .ok_or_else(|| "the Google callback had no authorization code".to_string());
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() > deadline {
+                    return Err("timed out waiting for the Google sign-in to finish".into());
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
+/// Self-serve disconnect: deletes this agent's stored Google refresh token + connection metadata.
 #[tauri::command]
-pub async fn disconnect_google_workspace(app: AppHandle, member_id: String) -> Result<DeleteMembersAgentsMemberIdGoogleWorkspaceResponse, String> {
+pub async fn disconnect_google_workspace(
+    app: AppHandle,
+    member_id: String,
+) -> Result<DeleteMembersAgentsMemberIdConnectorsConnectorIdResponse, String> {
     gw_api::google_workspace_disconnect(app, member_id).await
 }

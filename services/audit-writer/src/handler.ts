@@ -1,5 +1,5 @@
 import type { SQSHandler } from "aws-lambda";
-import { auditEvent } from "@fizz/core";
+import { auditEvent } from "@perch/core";
 import { reserveNextChainPosition, recordChainHash } from "./chain-state.js";
 import { computeHash, writeAuditRecord } from "./s3-writer.js";
 

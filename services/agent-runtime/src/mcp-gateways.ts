@@ -5,7 +5,7 @@ import { SignatureV4 } from "@smithy/signature-v4";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { McpClient } from "@strands-agents/sdk";
-import type { ToolGrant } from "@fizz/core";
+import type { ToolGrant } from "@perch/core";
 
 // `McpClient#listTools()`'s element type (`McpTool`) isn't itself exported from the SDK's package
 // root — only used structurally as a return type — so this derives the same type from the method
@@ -69,8 +69,8 @@ function makeSignedFetch(region: string): FetchLike {
   };
 }
 
-// The one Gateway (infra/gateway.ts's makeGateway()) fronting http_fetch/gmail/calendar/browser as
-// `lambda`-type targets, and AWS's managed Web Search connector. Gateway prefixes every registered
+// The one Gateway (infra/gateway.ts's makeGateway()) fronting http_fetch/gmail/calendar/browser/
+// github as `lambda`-type targets, and AWS's managed Web Search connector. Gateway prefixes every registered
 // tool's name with its target's own `name` as `${targetName}___${toolName}` when exposing it over
 // MCP — see infra/gateway.ts's file comment. TOOL_TARGETS must match infra/gateway.ts's own
 // TOOL_TARGETS map exactly — there's no shared package between infra/ and services/agent-runtime to
@@ -81,6 +81,7 @@ const TOOL_TARGETS: Record<string, string> = {
   gmail: "gmail",
   calendar: "calendar",
   browser: "browser",
+  github: "github",
 };
 
 // Confirmed live via a real `tools/list` call this session that the Web Search connector's single

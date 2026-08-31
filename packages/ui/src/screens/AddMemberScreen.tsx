@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Channel, Member, SkillDoc } from "@fizz/core";
+import type { Channel, Member, SkillDoc } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Card, SectionLabel } from "../primitives/Card.js";
 import { color, font, radius, avatarPalette } from "../tokens.js";
-import { monoFor, paletteFor } from "../utils.js";
+import { avatarColorsFor, monoFor } from "../utils.js";
 
 export type ToolOption = { name: string; desc: string; needsApproval: boolean };
 export type ModelOption = { id: string; name: string; sub: string; provider: string };
@@ -43,7 +43,7 @@ export type NewPersonDraft = {
   channelIds: string[];
 };
 
-const emptyAgentDraft = (channelIds: string[]): NewAgentDraft => ({
+const emptyAgentDraft = (channelIds: string[], modelId = ""): NewAgentDraft => ({
   name: "",
   handle: "",
   roleDescription: "",
@@ -51,7 +51,7 @@ const emptyAgentDraft = (channelIds: string[]): NewAgentDraft => ({
   instructions: "",
   toolNames: [],
   toolApprovalOverrides: {},
-  modelId: "",
+  modelId,
   triggerEnabled: {},
   postsInChannelIds: channelIds,
   dailySpendCapUsd: 12,
@@ -66,16 +66,17 @@ const emptyPersonDraft = (channelIds: string[]): NewPersonDraft => ({
 });
 
 export function AddMemberScreen({
+  initialTab,
   channels,
   defaultChannelIds,
   members,
   availableTools,
   availableModels,
+  defaultModelId,
   templates,
   plugins,
   pluginQuery,
   onPluginQueryChange,
-  trustedPluginRegistries,
   importPluginUrlBusy,
   importPluginUrlError,
   onImportPluginUrl,
@@ -88,18 +89,20 @@ export function AddMemberScreen({
   onCreatePerson,
   onAddExistingMember,
 }: {
+  /** Which tab to open on. Defaults to "existing" when there's someone to add, else "agent". */
+  initialTab?: "existing" | "person" | "agent";
   channels: Channel[];
   defaultChannelIds: string[];
   /** Workspace members already created, so an existing agent/person can be added instead of remade. */
   members: Member[];
   availableTools: ToolOption[];
   availableModels: ModelOption[];
+  /** Workspace-level default model id — pre-selects the picker for a fresh agent draft. */
+  defaultModelId?: string;
   templates: PromptTemplate[];
   plugins?: PluginSummary[];
   pluginQuery?: string;
   onPluginQueryChange?: (q: string) => void;
-  /** Hostnames a workspace admin has approved in Settings for "Import from URL…" — empty disables it. */
-  trustedPluginRegistries?: string[];
   importPluginUrlBusy?: boolean;
   importPluginUrlError?: string;
   onImportPluginUrl?: (url: string) => void;
@@ -114,13 +117,13 @@ export function AddMemberScreen({
 }) {
   const targetChannel = channels.find((c) => defaultChannelIds.includes(c.id));
   const existingCandidates = members.filter((m) => !targetChannel?.memberIds.includes(m.id));
-  const [tab, setTab] = useState<"existing" | "person" | "agent">(existingCandidates.length > 0 ? "existing" : "agent");
-  const [agentDraft, setAgentDraft] = useState<NewAgentDraft>(() => emptyAgentDraft(defaultChannelIds));
+  const [tab, setTab] = useState<"existing" | "person" | "agent">(
+    initialTab ?? (existingCandidates.length > 0 ? "existing" : "agent"),
+  );
+  const [agentDraft, setAgentDraft] = useState<NewAgentDraft>(() => emptyAgentDraft(defaultChannelIds, defaultModelId));
   const [personDraft, setPersonDraft] = useState<NewPersonDraft>(() => emptyPersonDraft(defaultChannelIds));
   const [pluginPickerOpen, setPluginPickerOpen] = useState(false);
-  const [importUrlOpen, setImportUrlOpen] = useState(false);
   const [importUrlDraft, setImportUrlDraft] = useState("");
-  const canImportFromUrl = (trustedPluginRegistries?.length ?? 0) > 0;
 
   useEffect(() => {
     if (!importedAgentDraft) return;
@@ -182,7 +185,7 @@ export function AddMemberScreen({
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {existingCandidates.map((m) => {
-                  const pal = paletteFor(m.id);
+                  const pal = avatarColorsFor(m);
                   return (
                     <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px" }}>
                       <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={32} square={m.kind === "agent"} />
@@ -239,6 +242,67 @@ export function AddMemberScreen({
       ) : (
         <div style={{ maxWidth: 1080, margin: "0 auto", padding: "24px 24px 48px", display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {onImportPluginUrl && (
+              <Card>
+                <SectionLabel>Start from a plugin</SectionLabel>
+                <div style={{ fontSize: 12, color: color.muted, marginBottom: 12, marginTop: -8 }}>
+                  Paste a GitHub repo or folder URL — or a direct link to a plugin.json — to prefill everything below from an existing agent plugin. Or skip this and fill the form in yourself.
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={importUrlDraft}
+                    onChange={(e) => setImportUrlDraft(e.target.value)}
+                    placeholder="https://github.com/getperch/agents/tree/main/research-agent"
+                    style={{ flex: 1, height: 34, border: `1px solid ${color.borderStrong}`, borderRadius: radius.lg, padding: "0 10px", font: `400 12px ${font.mono}`, outline: "none", background: color.surface, color: color.ink }}
+                  />
+                  <Button variant="secondary" disabled={importPluginUrlBusy || !importUrlDraft.trim()} onClick={() => onImportPluginUrl(importUrlDraft.trim())}>
+                    {importPluginUrlBusy ? "Importing…" : "Import"}
+                  </Button>
+                </div>
+                {importPluginUrlError && <div style={{ fontSize: 12, color: color.statusDeclinedFg, marginTop: 8 }}>{importPluginUrlError}</div>}
+                {plugins && onBrowsePlugin && (
+                  <>
+                    <button
+                      onClick={() => setPluginPickerOpen((v) => !v)}
+                      className="ws-hoverable"
+                      style={{ marginTop: 12, height: 24, padding: "0 12px", background: pluginPickerOpen ? color.bg : color.surface, border: `1px solid ${color.border}`, borderRadius: radius.pill, font: `600 12px ${font.sans}`, color: color.mutedDark, cursor: "pointer" }}
+                    >
+                      Browse published plugins…
+                    </button>
+                    {pluginPickerOpen && (
+                      <div style={{ marginTop: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, overflow: "hidden" }}>
+                        {onPluginQueryChange && (
+                          <div style={{ padding: 8, borderBottom: `1px solid ${color.border}` }}>
+                            <input
+                              value={pluginQuery ?? ""}
+                              onChange={(e) => onPluginQueryChange(e.target.value)}
+                              placeholder="Search plugins…"
+                              style={{ width: "100%", height: 28, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: "0 8px", font: `400 12px ${font.sans}`, outline: "none", background: color.bg, color: color.ink }}
+                            />
+                          </div>
+                        )}
+                        {plugins.length === 0 && (
+                          <div style={{ padding: 12, fontSize: 12, color: color.mutedLight }}>
+                            {pluginQuery ? "No plugins match that search." : "No plugins published yet."}
+                          </div>
+                        )}
+                        {plugins.map((p) => (
+                          <button
+                            key={`${p.name}@${p.version}`}
+                            onClick={() => onBrowsePlugin(p.name, p.version)}
+                            className="ws-hoverable"
+                            style={{ display: "block", width: "100%", textAlign: "left", padding: 10, background: color.surface, border: "none", borderTop: `1px solid ${color.border}`, cursor: "pointer" }}
+                          >
+                            <span style={{ display: "block", font: `600 12px ${font.mono}`, color: color.ink }}>{p.name}@{p.version}</span>
+                            {p.description && <span style={{ display: "block", fontSize: 12, color: color.muted, fontFamily: font.sans }}>{p.description}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </Card>
+            )}
             <Card>
               <SectionLabel>Identity</SectionLabel>
               <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -291,82 +355,7 @@ export function AddMemberScreen({
                     {t.name}
                   </button>
                 ))}
-                {plugins && onBrowsePlugin && (
-                  <button
-                    onClick={() => {
-                      setPluginPickerOpen((v) => !v);
-                      setImportUrlOpen(false);
-                    }}
-                    className="ws-hoverable"
-                    style={{ height: 24, padding: "0 12px", background: pluginPickerOpen ? color.bg : color.surface, border: `1px solid ${color.border}`, borderRadius: radius.pill, font: `600 12px ${font.sans}`, color: color.mutedDark, cursor: "pointer" }}
-                  >
-                    Browse plugins…
-                  </button>
-                )}
-                {onImportPluginUrl && (
-                  <button
-                    onClick={() => {
-                      setImportUrlOpen((v) => !v);
-                      setPluginPickerOpen(false);
-                    }}
-                    disabled={!canImportFromUrl}
-                    title={canImportFromUrl ? undefined : "Add a trusted registry hostname in workspace settings first"}
-                    className="ws-hoverable"
-                    style={{ height: 24, padding: "0 12px", background: importUrlOpen ? color.bg : color.surface, border: `1px solid ${color.border}`, borderRadius: radius.pill, font: `600 12px ${font.sans}`, color: canImportFromUrl ? color.mutedDark : color.mutedLight, cursor: canImportFromUrl ? "pointer" : "not-allowed" }}
-                  >
-                    Import from URL…
-                  </button>
-                )}
               </div>
-              {pluginPickerOpen && plugins && onBrowsePlugin && (
-                <div style={{ marginTop: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, overflow: "hidden" }}>
-                  {onPluginQueryChange && (
-                    <div style={{ padding: 8, borderBottom: `1px solid ${color.border}` }}>
-                      <input
-                        value={pluginQuery ?? ""}
-                        onChange={(e) => onPluginQueryChange(e.target.value)}
-                        placeholder="Search plugins…"
-                        style={{ width: "100%", height: 28, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: "0 8px", font: `400 12px ${font.sans}`, outline: "none", background: color.bg, color: color.ink }}
-                      />
-                    </div>
-                  )}
-                  {plugins.length === 0 && (
-                    <div style={{ padding: 12, fontSize: 12, color: color.mutedLight }}>
-                      {pluginQuery ? "No plugins match that search." : "No plugins published yet."}
-                    </div>
-                  )}
-                  {plugins.map((p) => (
-                    <button
-                      key={`${p.name}@${p.version}`}
-                      onClick={() => onBrowsePlugin(p.name, p.version)}
-                      className="ws-hoverable"
-                      style={{ display: "block", width: "100%", textAlign: "left", padding: 10, background: color.surface, border: "none", borderTop: `1px solid ${color.border}`, cursor: "pointer" }}
-                    >
-                      <span style={{ display: "block", font: `600 12px ${font.mono}`, color: color.ink }}>{p.name}@{p.version}</span>
-                      {p.description && <span style={{ display: "block", fontSize: 12, color: color.muted, fontFamily: font.sans }}>{p.description}</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {importUrlOpen && onImportPluginUrl && (
-                <div style={{ marginTop: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ fontSize: 12, color: color.muted }}>
-                    Fetches a plugin.json from a trusted host and imports it, even if it wasn't published by this workspace.
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      value={importUrlDraft}
-                      onChange={(e) => setImportUrlDraft(e.target.value)}
-                      placeholder="https://example.com/plugins/my-agent/1.0.0/plugin.json"
-                      style={{ flex: 1, height: 32, border: `1px solid ${color.borderStrong}`, borderRadius: radius.lg, padding: "0 10px", font: `400 12px ${font.mono}`, outline: "none", background: color.surface, color: color.ink }}
-                    />
-                    <Button variant="secondary" disabled={importPluginUrlBusy || !importUrlDraft.trim()} onClick={() => onImportPluginUrl(importUrlDraft.trim())}>
-                      {importPluginUrlBusy ? "Importing…" : "Import"}
-                    </Button>
-                  </div>
-                  {importPluginUrlError && <div style={{ fontSize: 12, color: color.statusDeclinedFg }}>{importPluginUrlError}</div>}
-                </div>
-              )}
             </Card>
 
             <Card>
@@ -407,35 +396,10 @@ export function AddMemberScreen({
 
             <Card>
               <SectionLabel>When it works</SectionLabel>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <TriggerRow
-                  glyph="@"
-                  title="On mention"
-                  sub="Responds when @mentioned in a channel it's in"
-                  on={agentDraft.triggerEnabled.mention ?? true}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, mention: !(d.triggerEnabled.mention ?? true) } }))}
-                />
-                <TriggerRow
-                  glyph="👀"
-                  title="On relevant messages"
-                  sub="Chimes in when a message looks relevant to its role, even without being @mentioned"
-                  on={agentDraft.triggerEnabled.relevant ?? false}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, relevant: !d.triggerEnabled.relevant } }))}
-                />
-                <TriggerRow
-                  glyph="⏱"
-                  title="On a schedule"
-                  sub="Runs on a cron schedule you set"
-                  on={agentDraft.triggerEnabled.schedule ?? false}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, schedule: !d.triggerEnabled.schedule } }))}
-                />
-                <TriggerRow
-                  glyph="⚡"
-                  title="On webhook"
-                  sub="Runs when an external system calls its webhook"
-                  on={agentDraft.triggerEnabled.webhook ?? false}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, webhook: !d.triggerEnabled.webhook } }))}
-                />
+              <div style={{ fontSize: 12.5, color: color.muted, lineHeight: 1.55 }}>
+                New agents respond when <strong>@mentioned</strong> in a channel they're in. Set up
+                schedules (e.g. a daily digest) from <strong>Tasks → Schedules</strong> once the
+                agent exists.
               </div>
             </Card>
           </div>
@@ -556,23 +520,6 @@ export function ModelSelect({ models, value, onChange }: { models: ModelOption[]
   );
 }
 
-function TriggerRow({ glyph, title, sub, on, onClick }: { glyph: string; title: string; sub: string; on: boolean; onClick: () => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12 }}>
-      <span style={{ width: 28, height: 28, flex: "none", borderRadius: radius.md, background: color.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>{glyph}</span>
-      <span style={{ flex: 1 }}>
-        <span style={{ display: "block", fontSize: 12, fontWeight: 600 }}>{title}</span>
-        <span style={{ display: "block", fontSize: 12, color: color.muted }}>{sub}</span>
-      </span>
-      <button
-        onClick={onClick}
-        style={{ width: 36, height: 20, borderRadius: radius.pill, border: "none", background: on ? color.ink : color.borderStrong, position: "relative", cursor: "pointer" }}
-      >
-        <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 16, height: 16, borderRadius: radius.pill, background: color.surface, transition: "left .12s" }} />
-      </button>
-    </div>
-  );
-}
 
 function ChannelChips({ channels, selectedIds, onToggle }: { channels: Channel[]; selectedIds: string[]; onToggle: (id: string) => void }) {
   return (

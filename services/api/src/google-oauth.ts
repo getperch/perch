@@ -1,79 +1,42 @@
-import { DeleteParameterCommand, GetParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
+import { DeleteParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import { HTTPException } from "hono/http-exception";
+import { readConnectorConfig } from "./connector-config.js";
 
 /**
- * Shared by `routers/members.ts` (connect/disconnect/status) and, by convention only (this repo
- * has no shared package between services/api and services/tools/*, so the same path templates are
- * re-derived — not imported — in services/tools/gmail/src/handler.ts and
- * services/tools/calendar/src/handler.ts; keep all three in sync if this ever changes), the
- * refresh-token + OAuth-client SSM paths and the Google OAuth wire calls themselves.
+ * The Google-Workspace-specific half of the connectors feature: the OAuth wire calls, and the
+ * per-agent refresh-token SSM path. The workspace-level client credentials (clientId/clientSecret)
+ * are stored via the connector-generic `connector-config.ts` under connectorId `"google-workspace"`
+ * — this module just reads them back for the token exchanges.
  *
- * Each agent's Google connection is fully independent: one workspace-level OAuth *client*
- * (clientId/clientSecret — the one thing registered by hand in Google Cloud Console, see
- * infra/README.md) entered at runtime by a workspace admin via Settings → Integrations
- * (`PUT /google-workspace/client`, stored as SSM SecureString JSON — not an `sst.Secret`, since
- * users may never touch Gmail/Calendar and shouldn't need a deploy-time step for it), but a
- * distinct refresh token per (workspaceId, memberId) pair, since each grant represents a different
- * human's own Google account connected to that specific agent.
+ * Per-agent token path (must match the tool Lambdas that re-derive it — no shared package with
+ * services/tools/*, see services/tools/gmail/src/google-token.ts; keep in sync):
+ *
+ *   /perch/${STAGE}/${workspaceId}/agents/${memberId}/connectors/google-workspace/token
+ *
+ * A distinct refresh token per (workspaceId, memberId) pair — each grant is a different human's own
+ * Google account connected to that specific agent.
  */
 const STAGE = process.env.STAGE ?? "dev";
 
 const ssm = new SSMClient({});
 
-export function googleWorkspaceSsmPath(workspaceId: string, memberId: string): string {
-  return `/fizz/${STAGE}/${workspaceId}/agents/${memberId}/google-workspace-refresh-token`;
-}
-
-export function googleOAuthClientSsmPath(workspaceId: string): string {
-  return `/fizz/${STAGE}/${workspaceId}/google-oauth-client`;
+export function googleAgentTokenSsmPath(workspaceId: string, memberId: string): string {
+  return `/perch/${STAGE}/${workspaceId}/agents/${memberId}/connectors/google-workspace/token`;
 }
 
 type GoogleOAuthClient = { clientId: string; clientSecret: string };
 
-async function readGoogleOAuthClient(workspaceId: string): Promise<GoogleOAuthClient | undefined> {
-  try {
-    const res = await ssm.send(new GetParameterCommand({ Name: googleOAuthClientSsmPath(workspaceId), WithDecryption: true }));
-    const value = res.Parameter?.Value;
-    if (!value) return undefined;
-    return JSON.parse(value) as GoogleOAuthClient;
-  } catch (err) {
-    if ((err as { name?: string }).name === "ParameterNotFound") return undefined;
-    throw err;
-  }
-}
-
 /** Throws a clear, visible 400 rather than silently proceeding with an empty client id/secret. */
 export async function requireGoogleOAuthClient(workspaceId: string): Promise<GoogleOAuthClient> {
-  const client = await readGoogleOAuthClient(workspaceId);
-  if (!client?.clientId || !client?.clientSecret) {
+  const values = await readConnectorConfig(workspaceId, "google-workspace");
+  const clientId = values?.clientId;
+  const clientSecret = values?.clientSecret;
+  if (!clientId || !clientSecret) {
     throw new HTTPException(400, {
-      message: "Google Workspace isn't configured for this workspace yet — a workspace admin needs to add the Google OAuth client in Settings → Integrations.",
+      message: "Google Workspace isn't configured for this workspace yet — a workspace admin needs to add the Google OAuth client in Settings → Connectors.",
     });
   }
-  return client;
-}
-
-export async function storeGoogleOAuthClient(workspaceId: string, client: GoogleOAuthClient): Promise<void> {
-  await ssm.send(
-    new PutParameterCommand({
-      Name: googleOAuthClientSsmPath(workspaceId),
-      Value: JSON.stringify(client),
-      Type: "SecureString",
-      Overwrite: true,
-    }),
-  );
-}
-
-export async function getGoogleOAuthClientStatus(workspaceId: string): Promise<{ configured: boolean; clientId?: string }> {
-  const client = await readGoogleOAuthClient(workspaceId);
-  return client ? { configured: true, clientId: client.clientId } : { configured: false };
-}
-
-export async function deleteGoogleOAuthClient(workspaceId: string): Promise<void> {
-  await ssm.send(new DeleteParameterCommand({ Name: googleOAuthClientSsmPath(workspaceId) })).catch((err) => {
-    // Idempotent: clearing a config that was never set (or already cleared) isn't an error.
-    if ((err as { name?: string }).name !== "ParameterNotFound") throw err;
-  });
+  return { clientId, clientSecret };
 }
 
 type GoogleTokenResponse = {
@@ -114,7 +77,7 @@ export async function exchangeGoogleAuthCode(workspaceId: string, input: { code:
     // apps/desktop/src-tauri/src/google_workspace.rs) — if this still happens, the user needs to
     // revoke prior access at https://myaccount.google.com/permissions and reconnect.
     throw new HTTPException(400, {
-      message: "Google didn't return a refresh token — revoke Fizz's access at https://myaccount.google.com/permissions and try connecting again.",
+      message: "Google didn't return a refresh token — revoke Perch's access at https://myaccount.google.com/permissions and try connecting again.",
     });
   }
   return parsed;
@@ -137,7 +100,7 @@ export async function fetchGoogleUserinfo(accessToken: string): Promise<{ email:
 export async function storeGoogleRefreshToken(workspaceId: string, memberId: string, refreshToken: string): Promise<void> {
   await ssm.send(
     new PutParameterCommand({
-      Name: googleWorkspaceSsmPath(workspaceId, memberId),
+      Name: googleAgentTokenSsmPath(workspaceId, memberId),
       Value: refreshToken,
       Type: "SecureString",
       Overwrite: true,
@@ -146,7 +109,7 @@ export async function storeGoogleRefreshToken(workspaceId: string, memberId: str
 }
 
 export async function deleteGoogleRefreshToken(workspaceId: string, memberId: string): Promise<void> {
-  await ssm.send(new DeleteParameterCommand({ Name: googleWorkspaceSsmPath(workspaceId, memberId) })).catch((err) => {
+  await ssm.send(new DeleteParameterCommand({ Name: googleAgentTokenSsmPath(workspaceId, memberId) })).catch((err) => {
     // Idempotent: disconnecting an agent that was never connected (or already disconnected) isn't
     // an error — ParameterNotFound is the expected case, not a failure to surface.
     if ((err as { name?: string }).name !== "ParameterNotFound") throw err;

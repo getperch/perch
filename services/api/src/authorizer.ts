@@ -20,9 +20,9 @@ const issuerUrl = new URL(process.env.OPENAUTH_ISSUER_URL!);
 // Defensive against a trailing slash anywhere upstream (e.g. infra's restApi.url has one) —
 // a mismatched double-vs-single slash here previously caused a silent double-prefix bug.
 const issuerPath = issuerUrl.pathname.replace(/\/+$/, "");
-function createFizzClient() {
+function createPerchClient() {
   return createClient({
-    clientID: "fizz-desktop",
+    clientID: "perch-desktop",
     issuer: issuerUrl.origin,
     fetch: (input, init) => {
       // A poisoned discovery-doc cache (see the try/catch in `handler` below) surfaces here as
@@ -38,7 +38,7 @@ function createFizzClient() {
     },
   });
 }
-let client = createFizzClient();
+let client = createPerchClient();
 
 // API Gateway caches the returned policy per identity source (the raw Authorization header
 // value) for the authorizer's TTL, and reuses it for *any* subsequent call from that same token —
@@ -71,8 +71,8 @@ export const handler: APIGatewayRequestAuthorizerHandler = async (event) => {
     // (rather than a clean `{err}` from verify()) would otherwise bubble up as a raw 500 from API
     // Gateway. Rebuild the client so the *next* request on this warm container gets a fresh
     // discovery/JWKS fetch instead of staying broken until the container recycles.
-    console.error("[fizz] authorizer: client.verify threw, rebuilding client", err);
-    client = createFizzClient();
+    console.error("[perch] authorizer: client.verify threw, rebuilding client", err);
+    client = createPerchClient();
     return policy("Deny", event.methodArn);
   }
   if (verified.err || verified.subject.type !== "user") return policy("Deny", event.methodArn);

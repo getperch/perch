@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-09-10T04:18:31.970Z",
+        "reason": "Geist is the project's established brand typeface across the app and landing page — confirmed intentional"
+      },
+      {
+        "rule": "overused-font",
+        "value": "space grotesk",
+        "createdAt": "2026-09-10T04:18:32.007Z",
+        "reason": "Space Grotesk is the project's established display typeface — confirmed intentional"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-09-10T04:18:32.042Z",
+        "reason": "Geist Mono is the project's established monospace typeface — confirmed intentional"
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "packages/ui/src/global.css"
+        ],
+        "createdAt": "2026-09-10T04:18:59.896Z",
+        "reason": "Line 1 is the Google Fonts @import for the confirmed-intentional Geist / Space Grotesk / Geist Mono system; this file is where that typeface choice lives"
+      }
+    ]
+  }
+}
