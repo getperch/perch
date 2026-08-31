@@ -1,5 +1,5 @@
 {
-  "name": "@fizz/tool-browser-agentcore",
+  "name": "@perch/tool-browser-agentcore",
   "private": true,
   "version": "0.1.0",
   "type": "module",

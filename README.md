@@ -1,4 +1,10 @@
-# fizz
+<p align="center">
+  <img src="assets/perch-logo.svg" alt="Perch" width="112" height="124" />
+</p>
+
+<h1 align="center">perch</h1>
+
+<p align="center"><em>For your flock of agents — the place they gather between flights, and the place you go to see what they brought back.</em></p>
 
 > **Warning: Experimental**
 >
@@ -12,14 +18,47 @@ runs entirely on AWS, deployed with SST — similar in spirit to
 
 See [`infra/README.md`](infra/README.md) for the data model, deploy steps, and a list of newer AWS/SST surfaces worth double-checking before production use.
 
+## Screenshots
+
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="assets/screenshots/home.png" alt="Home: spend, waiting-on-you, and overnight agent activity" width="49%" />
+  <img src="assets/screenshots/chat.png" alt="Chat: an agent replying with a structured card and a View run link" width="49%" />
+</p>
+<p align="center">
+  <img src="assets/screenshots/settings.png" alt="Workspace settings: people, agents, and autonomy defaults" width="49%" />
+</p>
+<!-- markdownlint-enable MD033 -->
+
+## Features
+
+- **Agents as chat members** — they join channels, get @mentioned or triaged into relevant
+  conversations, and reply in real time, same as a person would.
+- **Real tools, real isolation** — HTTP fetch, Gmail, Calendar, a driven browser session, GitHub
+  (issues, PR comments, and an async clone/edit/test/push/PR coding task), and web search, each
+  its own Lambda so one tool grant can't reach another's blast radius.
+- **Human approval, built in** — an agent can pause mid-run for a person to approve or deny a
+  risky tool call, resuming exactly where it left off once decided.
+- **Durable execution** — runs are checkpointed by AWS Lambda Durable Execution, so a long tool
+  call or a multi-hour approval wait survives a crash or a redeploy.
+- **Schedules & Routines** — cron-triggered agent runs for recurring work, and taught browser
+  Routines that record a human's clicks once and replay them step by step later.
+- **Memory** — per-agent knowledge, stored as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+  bundle, plus session memory, injected into an agent's context automatically.
+- **Structured replies** — agents can render tables, forms, checklists, and status cards instead
+  of walls of text, using the open [A2UI](https://a2ui.org) component format.
+- **Tamper-evident audit log** — every action is hash-chained into an S3 Object Lock bucket, so
+  the log can't be edited or deleted, even by an admin.
+- **Self-hostable** — runs entirely in your own AWS account, deployed with [SST](https://sst.dev).
+
 ## Layout
 
 ```
 apps/desktop/       Tauri v2 + React desktop client (mobile targets added later, same codebase)
 packages/core/       Shared Zod schemas: Workspace, Channel, Member, Message, Run, Task, Approval, AuditEvent
 packages/api-contract/  REST endpoint input/output Zod schemas, shared by client and server
-packages/ui/          Design system ported from the Claude Design source, all six screens
-services/api/         Hono REST API Lambda (channels/members/messages/tasks/approvals) + SSE stream Lambda
+packages/ui/          Design system + Perch brand tokens (Claude Design source), all six screens
+services/api/         Hono REST API Lambda (channels/members/messages/tasks/approvals) + a live event stream Lambda
 services/agent-runtime/ Durable Execution SDK orchestrator + Strands agent loop
 services/tools/        One Lambda per tool grant (isolation boundary)
 services/audit-writer/  Hash-chains audit events into the S3 Object Lock bucket
@@ -33,7 +72,7 @@ corepack enable
 pnpm install
 
 pnpm sst:dev        # deploys the AWS backend to your account, watches for changes
-pnpm --filter @fizz/desktop tauri dev   # in a second terminal
+pnpm --filter @perch/desktop tauri dev   # in a second terminal
 ```
 
 On first launch the desktop app shows a **Connect to your backend** screen — paste the API URL
@@ -43,7 +82,7 @@ different backend" on the sign-in screen clears that and starts over.
 
 Sign-in opens the system browser to an [OpenAuth](https://openauth.js.org) server mounted at
 `/auth` on that same API URL — no separate URL, no CloudFront, it's just another route on the
-REST API (see `infra/api.ts`) — and redirects back into the app via a `fizz://` deep link once
+REST API (see `infra/api.ts`) — and redirects back into the app via a `perch://` deep link once
 you're done. The client never sees a password directly.
 If the deep link doesn't fire (unreliable in some dev setups, e.g. `tauri dev` on Linux/WSL
 before the app is bundled/installed), the sign-in screen has a "paste the callback URL" fallback.
@@ -51,9 +90,11 @@ The **first** account to sign up bootstraps the workspace (becomes its own Membe
 after that is invite-gated — sign-up only succeeds for an email an admin already added via
 "Add member → Person".
 
-`apps/desktop/src-tauri/tauri.conf.json` references app icons that aren't generated yet — run
-`pnpm --filter @fizz/desktop tauri icon <path-to-a-1024x1024-png>` before building a release
-bundle (not needed for `tauri dev`).
+App icons for every platform (macOS `.icns`, Windows `.ico`, Linux PNGs, iOS `AppIcon-*`, Android
+`mipmap-*`) are committed under `apps/desktop/src-tauri/icons/`, generated from the Perch mark. To
+regenerate them after a brand change, edit the sources in `apps/desktop/src-tauri/`
+(`app-icon.svg`, `app-icon-android-fg.svg`, `app-icon.json`) and run
+`pnpm --filter @perch/desktop exec tauri icon src-tauri/app-icon.json`.
 
 ## Verifying it end to end
 
@@ -63,9 +104,13 @@ bundle (not needed for `tauri dev`).
 3. Create a channel, then use **Add member → Agent** to create an agent with the `http_fetch`
    tool and an instruction like "Summarize the page at the URL you're given." @mention it in a
    message — this invokes `services/agent-runtime`, which should post a reply back in the channel
-   within a few seconds, live over the SSE stream (no page refresh needed).
+   within a few seconds, live (no page refresh needed).
 4. Give the agent a tool with `needsApproval` on, trigger it, and confirm an "Approval needed"
    card appears in Chat; clicking Approve should resume the paused run.
 5. Check `s3://<audit bucket>/<workspaceId>/...` — every step above should have a corresponding
    hash-chained JSON record, and attempting to delete one (`aws s3api delete-object`) should fail
    because of Object Lock.
+
+## License
+
+[MIT](LICENSE)

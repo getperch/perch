@@ -1,7 +1,9 @@
-import type { Run, RunStep } from "@fizz/core";
+import { useState } from "react";
+import type { Run, RunStep } from "@perch/core";
 import { Button } from "../primitives/Button.js";
 import { Card, SectionLabel } from "../primitives/Card.js";
 import { CodeBlock } from "../primitives/CodeBlock.js";
+import { ConfirmDialog } from "../primitives/ConfirmDialog.js";
 import { Pill } from "../primitives/Pill.js";
 import { color, font, radius } from "../tokens.js";
 
@@ -22,6 +24,7 @@ export function RunDetailScreen({
   agentFg,
   onBack,
   onRerun,
+  onCancel,
 }: {
   run: Run;
   steps: RunStep[];
@@ -31,7 +34,12 @@ export function RunDetailScreen({
   agentFg: string;
   onBack: () => void;
   onRerun: () => void;
+  /** Marks this run failed (see services/api/src/routers/runs.ts's `POST /{runId}/cancel`) —
+   * omit to hide the button (RunDetailScreen doesn't know on its own whether the caller wants
+   * this wired up everywhere it's used). */
+  onCancel?: () => void;
 }) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const st = statusPill[run.status];
   const stats = [
     { label: "Duration", value: durationLabel(run), sub: run.status === "completed" ? "finished" : "so far" },
@@ -51,8 +59,22 @@ export function RunDetailScreen({
         <Pill bg={st.bg} fg={st.fg}>{st.label}</Pill>
         <span style={{ font: `400 12px ${font.mono}`, color: color.muted }}>{run.id}</span>
         <span style={{ flex: 1 }} />
+        {onCancel && (run.status === "running" || run.status === "waiting_approval") && (
+          <Button variant="secondary" onClick={() => setConfirmCancel(true)}>Cancel</Button>
+        )}
         <Button variant="secondary" onClick={onRerun}>Re-run</Button>
       </header>
+      <ConfirmDialog
+        open={confirmCancel}
+        title="Cancel this run?"
+        message="It'll be stopped and marked as failed. This can't be undone."
+        confirmLabel="Cancel run"
+        onConfirm={() => {
+          setConfirmCancel(false);
+          onCancel?.();
+        }}
+        onClose={() => setConfirmCancel(false)}
+      />
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 24px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
         {run.status === "failed" && (

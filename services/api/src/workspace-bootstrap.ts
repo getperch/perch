@@ -1,5 +1,6 @@
 import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
+import { displayNameFromEmail } from "@perch/core";
 import { ddb, TABLE_NAME } from "./db.js";
 
 // Self-hosted deployments are single-workspace for now — matches the `ws_default` fallback
@@ -25,7 +26,7 @@ async function bootstrapWorkspace(email: string) {
     kind: "person" as const,
     id: ulid(),
     workspaceId: WORKSPACE_ID,
-    name: email.split("@")[0]!,
+    name: displayNameFromEmail(email),
     email,
     role: "owner" as const,
     mono: email.slice(0, 2).toUpperCase(),

@@ -1,0 +1,3 @@
+# self-contained sidecar binaries — built by `pnpm --filter @perch/desktop sidecar:build`
+# (also run automatically by tauri.conf.json beforeDevCommand / beforeBuildCommand)
+perch-sidecar-*

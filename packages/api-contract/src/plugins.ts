@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { memberId, pluginIndex, pluginManifest, workspaceId } from "@fizz/core";
+import { memberId, pluginIndex, pluginManifest, workspaceId } from "@perch/core";
 
 /** Backs "Publish as plugin" on the agent detail screen. */
 export const publishInput = z.object({ workspaceId, memberId });

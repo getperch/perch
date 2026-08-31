@@ -3,7 +3,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::store;
 
-const CLIENT_ID: &str = "fizz-desktop";
+const CLIENT_ID: &str = "perch-desktop";
 
 async fn send_once<Req: Serialize + ?Sized>(
     app: &AppHandle,
@@ -62,19 +62,22 @@ async fn refresh_session(app: &AppHandle) -> Result<(), String> {
     store::save_session(app, &tokens.access_token, &tokens.refresh_token)
 }
 
-/// Sends one authenticated request, transparently refreshing and retrying once on a 401 *or* 403
-/// before giving up. Both trigger a refresh attempt: `services/api/src/authorizer.ts` never
-/// throws to produce a bare 401 itself — every failure it can produce (missing, malformed,
-/// invalid, or *expired* token) returns an explicit `Deny` IAM policy, which API Gateway turns
-/// into a 403 with `"...explicit deny in an identity-based policy"`. The only way a 401 happens
-/// is API Gateway itself short-circuiting *before* invoking that Lambda, when the identity source
-/// (the `Authorization` header) is entirely absent — e.g. this device has no token stored at all.
-/// So an ordinary, routine access-token expiry — the single most common case — surfaces as 403,
-/// not 401. Treating 403 as unconditionally unrecoverable (as this used to) meant a normal token
-/// expiry forced a full re-login every time instead of a silent refresh, even though the stored
-/// refresh token was still perfectly valid. If refresh itself fails, or the retried request is
-/// still 401/403, *then* the stored session is cleared (force re-login) — that's the genuinely
-/// unrecoverable case (refresh token itself expired/revoked).
+/// Sends one authenticated request, transparently refreshing and retrying once when the failure
+/// looks like an expired session before giving up.
+///
+/// `services/api/src/authorizer.ts` never throws to produce a bare 401 itself — every failure it
+/// can produce (missing, malformed, invalid, or *expired* token) returns an explicit `Deny` IAM
+/// policy, which API Gateway turns into a 403 carrying an `x-amzn-errortype: AccessDeniedException`
+/// header and a `"...explicit deny..."` body. The only way a 401 happens is API Gateway itself
+/// short-circuiting *before* invoking that Lambda, when the `Authorization` header is entirely
+/// absent. So a routine access-token expiry — the single most common case — surfaces as 403, and
+/// treating 403 as unrecoverable forces a needless full re-login.
+///
+/// But a route can *also* return 403 deliberately (hono `HTTPException(403)` — e.g. "not allowed
+/// to do that here"); that one has neither the AWS header nor the AWS body. Only the API-Gateway
+/// shape triggers refresh-or-signout — an application 403 is returned to the caller as its own
+/// error, so a permissions message never masquerades as "you've been signed out". If refresh
+/// fails, or the retried request is still 401/403, *then* the session is cleared.
 ///
 /// `pub(crate)` (not just used via `call`/`call_text` below) so `stream.rs`'s SSE polling loop can
 /// go through the same refresh/clear-session contract instead of hand-rolling its own bearer-auth
@@ -91,20 +94,34 @@ pub(crate) async fn send_authenticated<Req: Serialize + ?Sized>(
     let res = send_once(app, method.clone(), url, body, extra_headers).await?;
     let status = res.status().as_u16();
 
-    if status == 401 || status == 403 {
-        if refresh_session(app).await.is_err() {
-            let _ = store::clear_session(app);
-            return Err("signed out".to_string());
-        }
-        let retried = send_once(app, method, url, body, extra_headers).await?;
-        if retried.status().as_u16() == 401 || retried.status().as_u16() == 403 {
-            let _ = store::clear_session(app);
-            return Err("signed out".to_string());
-        }
-        return Ok(retried);
+    if status != 401 && status != 403 {
+        return Ok(res);
     }
 
-    Ok(res)
+    let amzn_access_denied = res
+        .headers()
+        .get("x-amzn-errortype")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("AccessDenied"));
+    // Safe to consume the body here: this branch is a 401/403, never a success `call` needs to read.
+    let error_body = res.text().await.unwrap_or_default();
+    let is_expired_session = status == 401 || amzn_access_denied || error_body.contains("explicit deny");
+
+    if !is_expired_session {
+        // A route's own 403 — hand its message back to the caller instead of signing them out.
+        return Err(error_body);
+    }
+
+    if refresh_session(app).await.is_err() {
+        let _ = store::clear_session(app);
+        return Err("signed out".to_string());
+    }
+    let retried = send_once(app, method, url, body, extra_headers).await?;
+    if retried.status().as_u16() == 401 || retried.status().as_u16() == 403 {
+        let _ = store::clear_session(app);
+        return Err("signed out".to_string());
+    }
+    Ok(retried)
 }
 
 /// Shared by every `api/*.rs` command: builds `{api_url}/api{path}`, attaches the bearer token

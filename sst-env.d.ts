@@ -52,6 +52,10 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bus"
     }
+    "ProcedureScheduler": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
     "Table": {
       "name": string
       "type": "sst.aws.Dynamo"
@@ -61,6 +65,10 @@ declare module "sst" {
       "type": "sst.aws.Function"
     }
     "ToolCalendar": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
+    "ToolGithub": {
       "name": string
       "type": "sst.aws.Function"
     }

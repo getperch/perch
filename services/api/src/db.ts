@@ -6,8 +6,8 @@ import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
  *   Workspace  PK=WORKSPACE#<id>        SK=META
  *   Channel    PK=WORKSPACE#<id>        SK=CHANNEL#<id>
  *   Member     PK=WORKSPACE#<id>        SK=MEMBER#<id>
- *   GoogleWorkspaceConnection (per-agent, non-secret metadata only — the refresh token itself is
- *              an SSM SecureString, see google-oauth.ts) PK=WORKSPACE#<id>  SK=MEMBER#<id>#GOOGLE_WORKSPACE
+ *   ConnectorConnection (per-agent, per-connector, non-secret metadata only — the token itself is
+ *              an SSM SecureString, see google-oauth.ts) PK=WORKSPACE#<id>  SK=MEMBER#<id>#CONNECTOR#<connectorId>
  *   Task       PK=WORKSPACE#<id>        SK=TASK#<id>
  *   Approval   PK=WORKSPACE#<id>        SK=APPROVAL#<id>
  *   Run        PK=WORKSPACE#<id>        SK=RUN#<id>

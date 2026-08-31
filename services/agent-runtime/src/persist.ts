@@ -1,6 +1,6 @@
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
-import type { AgentMember, Approval, Citation, Message, Run, RunStep, Workspace } from "@fizz/core";
+import type { A2uiDocument, AgentMember, Approval, Citation, Member, Message, Run, RunStep, Workspace } from "@perch/core";
 import { ddb, TABLE_NAME } from "./db.js";
 import { appendChannelEvent, emit } from "./events.js";
 
@@ -13,9 +13,52 @@ export async function loadAgentConfig(workspaceId: string, agentId: string): Pro
   return res.Item.member;
 }
 
-export async function createRun(input: { workspaceId: string; channelId: string; agentId: string; title: string; triggeredBy: string }): Promise<Run> {
+/**
+ * The channel's own most recent messages, oldest first — see handler.ts's `recentActivityBlock`
+ * for why this exists: each agent's own conversation memory (`SessionManager`, keyed per
+ * (workspace, channel, *this* agent) — see memory.ts) only ever contains turns where *it* was the
+ * one invoked, so in a group channel with several agents, an agent has no visibility at all into
+ * what a person asked a different agent, or what that agent answered, a few messages earlier —
+ * confirmed as a real cause of https://github.com/getperch/perch/issues/3 ("group coordination
+ * fails... context sharing appears to degrade... with more than 2 agents"), not just a hypothesis:
+ * with only one other participant a person tends to loop every agent in directly, so the gap is
+ * easy to miss; add a third and a "did X already look into this?" question starts landing on an
+ * agent that was structurally never going to know.
+ */
+export async function getRecentChannelMessages(channelId: string, limit = 12): Promise<Message[]> {
+  const res = await ddb.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: "pk = :pk and begins_with(sk, :prefix)",
+      ExpressionAttributeValues: { ":pk": `CHANNEL#${channelId}`, ":prefix": "MSG#" },
+      ScanIndexForward: false,
+      Limit: limit,
+    }),
+  );
+  return (res.Items ?? []).map((i) => i.message as Message).reverse();
+}
+
+/** Every member of the workspace — used to resolve `authorId`s in `getRecentChannelMessages` back
+ * to a display name, the same way services/api's own member listing does. */
+export async function listMembers(workspaceId: string): Promise<Member[]> {
+  const res = await ddb.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: "pk = :pk and begins_with(sk, :prefix)",
+      ExpressionAttributeValues: { ":pk": `WORKSPACE#${workspaceId}`, ":prefix": "MEMBER#" },
+    }),
+  );
+  return (res.Items ?? []).map((i) => i.member as Member);
+}
+
+export async function getRun(workspaceId: string, runId: string): Promise<Run | undefined> {
+  const res = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `WORKSPACE#${workspaceId}`, sk: `RUN#${runId}` } }));
+  return res.Item?.run;
+}
+
+export async function createRun(input: { workspaceId: string; channelId: string; agentId: string; title: string; triggeredBy: string; runId?: string }): Promise<Run> {
   const run: Run = {
-    id: ulid(),
+    id: input.runId ?? ulid(),
     workspaceId: input.workspaceId,
     channelId: input.channelId,
     agentId: input.agentId,
@@ -46,7 +89,14 @@ export async function getWorkspaceSpendToday(workspaceId: string): Promise<{ tot
       ExpressionAttributeValues: { ":pk": `WORKSPACE#${workspaceId}`, ":prefix": "RUN#" },
     }),
   );
-  const runsToday: Run[] = (res.Items ?? []).map((i) => i.run).filter((run: Run) => run.startedAt.slice(0, 10) === todayStart);
+  // `.run` guard: this scan also catches services/api/src/run-execution.ts's `RUNEXEC#<id>` items
+  // sharing this same `WORKSPACE#<id>` partition — they predate that file's rename to a
+  // non-colliding prefix, so any left over from before the fix (or anything else ever written
+  // under a `RUN#`-prefixed sk without a `.run` attribute) doesn't crash this on `undefined
+  // .startedAt` the way it did live before this guard existed.
+  const runsToday: Run[] = (res.Items ?? [])
+    .map((i) => i.run as Run | undefined)
+    .filter((run): run is Run => !!run && run.startedAt.slice(0, 10) === todayStart);
 
   const byAgentUsd: Record<string, number> = {};
   let totalUsd = 0;
@@ -130,6 +180,67 @@ export async function postMessage(input: {
   await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${input.channelId}`, sk: `MSG#${message.id}`, message } }));
   await appendChannelEvent(input.channelId, { type: "message.created", channelId: input.channelId, message });
   await emit(input.workspaceId, input.authorId, "message.sent", { messageId: message.id, channelId: input.channelId });
+  return message;
+}
+
+/**
+ * Persists an A2UI card (see `@perch/core`'s `a2ui.ts`) the agent built via the `render_ui` tool,
+ * as its own message in the channel.
+ *
+ * **Replay-safe.** The durable workflow replays a whole reasoning turn on crash (see handler.ts),
+ * so a naive `postMessage` here would double-post the card on every replay. Instead a deterministic
+ * pointer item `RUN#<runId> / A2UI#<renderKey>` (renderKey = the model's `toolUseId`, stable across
+ * replays of the same turn) records which message a given `render_ui` call produced: a repeat call
+ * with the same key updates that message in place rather than creating another.
+ */
+export async function attachA2ui(input: {
+  run: Run;
+  renderKey: string;
+  document: A2uiDocument;
+  /** When set, the card is keyed to `(channel, agent, updateKey)` so it persists and updates in
+   * place across turns and follow-up runs — a living dashboard / a form that becomes a result.
+   * Without it the card is keyed per-run (replay-safe, but a new message each run). */
+  updateKey?: string;
+}): Promise<Message> {
+  const { run, renderKey, document, updateKey } = input;
+  const pointer = updateKey
+    ? { pk: `CHANNEL#${run.channelId}`, sk: `A2UIKEY#${run.agentId}#${updateKey}` }
+    : { pk: `RUN#${run.id}`, sk: `A2UI#${renderKey}` };
+
+  const existingPointer = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: pointer }));
+  const existingMessageId: string | undefined = existingPointer.Item?.messageId;
+
+  if (existingMessageId) {
+    const msgRes = await ddb.send(
+      new GetCommand({ TableName: TABLE_NAME, Key: { pk: `CHANNEL#${run.channelId}`, sk: `MSG#${existingMessageId}` } }),
+    );
+    if (msgRes.Item) {
+      const message: Message = { ...msgRes.Item.message, a2ui: document };
+      await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${run.channelId}`, sk: `MSG#${message.id}`, message } }));
+      await appendChannelEvent(run.channelId, { type: "message.updated", channelId: run.channelId, message });
+      return message;
+    }
+    // Pointer dangling (message deleted) — fall through and post a fresh one.
+  }
+
+  const message = {
+    id: ulid(),
+    workspaceId: run.workspaceId,
+    channelId: run.channelId,
+    authorId: run.agentId,
+    isSystem: false,
+    text: undefined,
+    runId: run.id,
+    tools: [],
+    citations: [],
+    reactions: [],
+    a2ui: document,
+    createdAt: new Date().toISOString(),
+  };
+  await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${run.channelId}`, sk: `MSG#${message.id}`, message } }));
+  await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { ...pointer, messageId: message.id } }));
+  await appendChannelEvent(run.channelId, { type: "message.created", channelId: run.channelId, message });
+  await emit(run.workspaceId, run.agentId, "message.sent", { messageId: message.id, channelId: run.channelId });
   return message;
 }
 

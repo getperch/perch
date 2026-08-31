@@ -1,9 +1,10 @@
 import { useState } from "react";
-import type { AgentMember, SkillDoc, ToolGrant } from "@fizz/core";
+import type { AgentMember, SkillDoc, ToolGrant } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Card, SectionLabel } from "../primitives/Card.js";
-import { color, font, radius } from "../tokens.js";
+import { SegmentedControl } from "../primitives/SegmentedControl.js";
+import { avatarPalette, color, font, radius } from "../tokens.js";
 import { ModelSelect, type ModelOption, type ToolOption } from "./AddMemberScreen.js";
 
 const inputStyle: React.CSSProperties = { padding: "8px 10px", borderRadius: radius.md, border: `1px solid ${color.border}`, background: color.surface, font: `13px ${font.sans}`, color: color.ink };
@@ -26,6 +27,9 @@ export function AgentDetailScreen({
   availableModels,
   modelSaving,
   skillsSaving,
+  instructionsSaving,
+  roleDescriptionSaving,
+  nameSaving,
   googleWorkspaceConnection,
   googleWorkspaceConnecting,
   googleWorkspaceDisconnecting,
@@ -35,8 +39,16 @@ export function AgentDetailScreen({
   onSaveTools,
   onSaveModel,
   onSaveSkills,
+  onSaveInstructions,
+  onSaveRoleDescription,
+  onSaveName,
+  uiSaving,
+  onSaveUiEnabled,
   onConnectGoogleWorkspace,
   onDisconnectGoogleWorkspace,
+  onViewKnowledge,
+  colorSaving,
+  onSaveColor,
 }: {
   agent: AgentMember;
   busy?: boolean;
@@ -47,6 +59,9 @@ export function AgentDetailScreen({
   availableModels: ModelOption[];
   modelSaving?: boolean;
   skillsSaving?: boolean;
+  instructionsSaving?: boolean;
+  roleDescriptionSaving?: boolean;
+  nameSaving?: boolean;
   googleWorkspaceConnection?: GoogleWorkspaceConnection;
   googleWorkspaceConnecting?: boolean;
   googleWorkspaceDisconnecting?: boolean;
@@ -56,9 +71,22 @@ export function AgentDetailScreen({
   onSaveTools: (tools: ToolGrant[]) => void;
   onSaveModel: (model: string) => void;
   onSaveSkills: (skills: SkillDoc[]) => void;
+  onSaveInstructions: (instructions: string) => void;
+  onSaveRoleDescription: (roleDescription: string) => void;
+  onSaveName: (name: string) => void;
+  uiSaving?: boolean;
+  onSaveUiEnabled: (enabled: boolean) => void;
   onConnectGoogleWorkspace?: () => void;
   onDisconnectGoogleWorkspace?: () => void;
+  /** Opens the Knowledge screen filtered to this agent's own observations (see
+   * apps/desktop/src/App.tsx's `{name:"knowledge", agentHandle}`). Omit to hide the button — the
+   * long-term OKF memory bundle is a workspace-wide bucket, not something every agent build has to
+   * expose per-agent. */
+  onViewKnowledge?: () => void;
+  colorSaving?: boolean;
+  onSaveColor?: (colorBg: string, colorFg: string) => void;
 }) {
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [editingTools, setEditingTools] = useState(false);
   const [toolDraft, setToolDraft] = useState<string[]>(() => agent.config.tools.map((t) => t.toolName));
 
@@ -106,6 +134,42 @@ export function AgentDetailScreen({
     setEditingSkills(false);
   };
 
+  const [editingInstructions, setEditingInstructions] = useState(false);
+  const [instructionsDraft, setInstructionsDraft] = useState(agent.config.instructions);
+  const startEditingInstructions = () => {
+    setInstructionsDraft(agent.config.instructions);
+    setEditingInstructions(true);
+  };
+  const saveInstructions = () => {
+    const next = instructionsDraft.trim();
+    if (next && next !== agent.config.instructions) onSaveInstructions(next);
+    setEditingInstructions(false);
+  };
+
+  const [editingRole, setEditingRole] = useState(false);
+  const [roleDraft, setRoleDraft] = useState(agent.roleDescription);
+  const startEditingRole = () => {
+    setRoleDraft(agent.roleDescription);
+    setEditingRole(true);
+  };
+  const saveRole = () => {
+    const next = roleDraft.trim();
+    if (next && next !== agent.roleDescription) onSaveRoleDescription(next);
+    setEditingRole(false);
+  };
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(agent.name);
+  const startEditingName = () => {
+    setNameDraft(agent.name);
+    setEditingName(true);
+  };
+  const saveName = () => {
+    const next = nameDraft.trim();
+    if (next && next !== agent.name) onSaveName(next);
+    setEditingName(false);
+  };
+
   return (
     <div className="ws-sb" style={{ flex: 1, minHeight: 0, overflowY: "auto", background: color.surfaceMuted }}>
       <header style={{ height: 56, position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", gap: 12, padding: "0 20px", background: color.surface, borderBottom: `1px solid ${color.border}` }}>
@@ -114,6 +178,7 @@ export function AgentDetailScreen({
         <span style={{ flex: 1 }} />
         {error && <span style={{ fontSize: 12, color: color.statusDeclinedFg, maxWidth: 320 }}>{error}</span>}
         {published && <span style={{ fontSize: 12, color: color.muted, fontFamily: font.mono }}>{published.name}@{published.version}</span>}
+        {onViewKnowledge && <Button variant="secondary" onClick={onViewKnowledge}>Knowledge</Button>}
         <Button variant="primary" disabled={busy} onClick={onPublish}>
           {busy ? "Publishing…" : "Publish as plugin"}
         </Button>
@@ -122,17 +187,140 @@ export function AgentDetailScreen({
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 24px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
         <Card>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <Avatar mono={agent.mono} bg={agent.colorBg} fg={agent.colorFg} size={56} square />
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{agent.name}</div>
-              <div style={{ fontSize: 12, color: color.muted }}>@{agent.handle} · {agent.roleDescription}</div>
+            {onSaveColor ? (
+              <div style={{ position: "relative", flex: "none" }}>
+                <button
+                  onClick={() => setColorPickerOpen((v) => !v)}
+                  className="ws-hoverable"
+                  style={{ border: "none", background: "none", padding: 0, borderRadius: radius.md, cursor: "pointer" }}
+                  title="Change color"
+                >
+                  <Avatar mono={agent.mono} bg={agent.colorBg} fg={agent.colorFg} size={56} square />
+                </button>
+                {colorPickerOpen && (
+                  <>
+                    <div onClick={() => setColorPickerOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+                    <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 6, display: "flex", gap: 6, padding: 8, background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.lg, boxShadow: "0 8px 24px #00000026", zIndex: 11 }}>
+                      {avatarPalette.map((p, i) => {
+                        const active = p.bg === agent.colorBg && p.fg === agent.colorFg;
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => {
+                              onSaveColor(p.bg, p.fg);
+                              setColorPickerOpen(false);
+                            }}
+                            disabled={colorSaving}
+                            className="ws-hoverable"
+                            style={{ width: 28, height: 28, flex: "none", borderRadius: radius.md, background: p.bg, border: active ? `2px solid ${color.accent}` : `1px solid ${color.border}`, cursor: "pointer" }}
+                            title={active ? "Current color" : undefined}
+                          />
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <Avatar mono={agent.mono} bg={agent.colorBg} fg={agent.colorFg} size={56} square />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {editingName ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    autoFocus
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveName();
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                    maxLength={80}
+                    placeholder="Agent name"
+                    style={{ ...inputStyle, flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700 }}
+                  />
+                  <Button variant="primary" disabled={nameSaving || !nameDraft.trim()} onClick={saveName}>
+                    {nameSaving ? "Saving…" : "Save"}
+                  </Button>
+                  <Button variant="secondary" disabled={nameSaving} onClick={() => setEditingName(false)}>Cancel</Button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agent.name}</span>
+                  <button
+                    onClick={startEditingName}
+                    className="ws-hoverable"
+                    style={{ flex: "none", background: "none", border: "none", padding: "2px 4px", borderRadius: radius.sm, font: `500 12px ${font.sans}`, color: color.accent, cursor: "pointer" }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
+              {editingRole ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: color.muted, flex: "none" }}>@{agent.handle} ·</span>
+                  <input
+                    autoFocus
+                    value={roleDraft}
+                    onChange={(e) => setRoleDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveRole();
+                      if (e.key === "Escape") setEditingRole(false);
+                    }}
+                    placeholder="What this agent does"
+                    style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                  />
+                  <Button variant="primary" disabled={roleDescriptionSaving || !roleDraft.trim()} onClick={saveRole}>
+                    {roleDescriptionSaving ? "Saving…" : "Save"}
+                  </Button>
+                  <Button variant="secondary" disabled={roleDescriptionSaving} onClick={() => setEditingRole(false)}>Cancel</Button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                  <span style={{ fontSize: 12, color: color.muted, overflow: "hidden", textOverflow: "ellipsis" }}>@{agent.handle} · {agent.roleDescription}</span>
+                  <button
+                    onClick={startEditingRole}
+                    className="ws-hoverable"
+                    style={{ flex: "none", background: "none", border: "none", padding: "2px 4px", borderRadius: radius.sm, font: `500 12px ${font.sans}`, color: color.accent, cursor: "pointer" }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </Card>
 
         <Card>
-          <SectionLabel>Instructions</SectionLabel>
-          <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{agent.config.instructions}</div>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+            <SectionLabel>Instructions</SectionLabel>
+            <span style={{ flex: 1 }} />
+            {!editingInstructions && (
+              <Button variant="secondary" onClick={startEditingInstructions}>Edit</Button>
+            )}
+          </div>
+
+          {editingInstructions ? (
+            <>
+              <div style={{ fontSize: 12, color: color.muted, marginBottom: 12 }}>
+                The agent's system prompt — everything it should know and how it should behave.
+              </div>
+              <textarea
+                autoFocus
+                value={instructionsDraft}
+                onChange={(e) => setInstructionsDraft(e.target.value)}
+                style={{ ...textareaStyle, width: "100%", minHeight: 200, marginBottom: 12, boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button variant="primary" disabled={instructionsSaving || !instructionsDraft.trim()} onClick={saveInstructions}>
+                  {instructionsSaving ? "Saving…" : "Save"}
+                </Button>
+                <Button variant="secondary" disabled={instructionsSaving} onClick={() => setEditingInstructions(false)}>Cancel</Button>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{agent.config.instructions}</div>
+          )}
         </Card>
 
         <Card>
@@ -188,6 +376,28 @@ export function AgentDetailScreen({
               {agent.config.tools.length === 0 && <div style={{ fontSize: 13, color: color.mutedLight }}>No tools granted.</div>}
             </div>
           )}
+        </Card>
+
+        <Card>
+          <SectionLabel>Chat UI cards</SectionLabel>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: color.muted, lineHeight: 1.5 }}>
+              Lets this agent render structured cards — tables, checklists, status, callouts — in the chat instead of
+              plain text, via the standard <span style={{ fontFamily: font.mono }}>render_ui</span> capability. Turn off
+              for an agent that should only ever reply in prose.
+            </div>
+            <SegmentedControl
+              value={agent.config.ui?.enabled === false ? "off" : "on"}
+              onChange={(v) => {
+                if (!uiSaving) onSaveUiEnabled(v === "on");
+              }}
+              options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+              style={{ flex: "none", width: 132, opacity: uiSaving ? 0.6 : 1 }}
+            />
+          </div>
         </Card>
 
         {agent.config.tools.some((t) => CONNECTABLE_TOOL_NAMES.includes(t.toolName)) && (

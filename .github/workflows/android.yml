@@ -27,7 +27,15 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # `packages:` override is required — this action's own default is `"tools platform-tools"`,
+      # and Google has since removed the legacy `tools` package from the SDK repository manifest
+      # entirely. Left at the default, `sdkmanager tools` fails with "Warning: Failed to find
+      # package 'tools'" and the action treats that as fatal (confirmed live: exactly this build
+      # failing at that step). `platforms;android-36`/`build-tools;36.0.0`/`ndk;...` are installed
+      # explicitly in the next step regardless, so this only needs to keep `platform-tools`.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
 
       # Pinned to match apps/desktop/src-tauri/gen/android/app/build.gradle.kts's compileSdk/
       # targetSdk (36) and this project's NDK version, both verified locally — bump deliberately,
@@ -48,6 +56,13 @@ jobs:
           export NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
           pnpm tauri android init
 
+      # `tauri android init` seeds gen/android with the template's placeholder launcher icons;
+      # regenerate them (and the adaptive-icon background colour) from the committed Perch source
+      # so the APK ships the real brand icon. gen/android is gitignored, so this must run in CI.
+      - name: Apply app icons
+        working-directory: apps/desktop
+        run: pnpm tauri icon src-tauri/app-icon.json --ios-color "#7D35EB"
+
       - name: Build debug APK
         working-directory: apps/desktop
         run: |
@@ -63,6 +78,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fizz-android-debug
+          name: perch-android-debug
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error

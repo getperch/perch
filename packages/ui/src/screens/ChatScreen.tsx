@@ -1,7 +1,17 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { createElement, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import EmojiPicker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
-import type { ArtifactRef, Channel, Member, Message } from "@fizz/core";
+// The base package (not the React wrapper) — importing it registers the `<em-emoji>` custom
+// element `ReactionGlyph` renders through, and `init()` is what gives that element (and the
+// picker) actual emoji image data to render from. See `ensureEmojiMartInit`'s comment below.
+import { init as initEmojiMart } from "emoji-mart";
+
+// Gives the `<em-emoji>` custom element (registered as a side effect of the import above) actual
+// image data to render an emoji from, same as `<EmojiPicker>` below does for itself — a module-
+// level call, not inside a component, since it's one-time global setup for a web component, not
+// per-render React state.
+void initEmojiMart({ data: emojiData, set: "apple" });
+import type { ArtifactRef, Channel, Member, Message, Run } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
@@ -10,6 +20,7 @@ import { CodeBlock } from "../primitives/CodeBlock.js";
 import { Dialog } from "../primitives/Dialog.js";
 import { ConfirmDialog } from "../primitives/ConfirmDialog.js";
 import { Spinner } from "../primitives/Spinner.js";
+import { A2uiBlock } from "../a2ui/A2uiBlock.js";
 import { useResizable } from "../hooks/useResizable.js";
 import {
   AlertIcon,
@@ -31,7 +42,7 @@ import {
   TrashIcon,
 } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { mentionTokenFor, monoFor, paletteFor, relativeTime } from "../utils.js";
+import { avatarColorsFor, mentionTokenFor, monoFor, relativeTime } from "../utils.js";
 
 export function ChatScreen({
   channel,
@@ -47,6 +58,8 @@ export function ChatScreen({
   onApprove,
   onDeny,
   onOpenRun,
+  activeRuns,
+  onCancelRun,
   onAddMember,
   onBrowsePeople,
   agentMessageStyle,
@@ -65,6 +78,7 @@ export function ChatScreen({
   onDeleteMessage,
   onRetryMessage,
   onDismissMessage,
+  onA2uiAction,
   currentUserId,
   openArtifact,
   artifactContent,
@@ -86,6 +100,17 @@ export function ChatScreen({
   onApprove: (approvalId: string) => void;
   onDeny: (approvalId: string) => void;
   onOpenRun: (runId: string) => void;
+  /** Runs against this channel that are still `"running"`/`"waiting_approval"` — the like/👍
+   * reaction posted at the start of a run is otherwise the only sign one is in flight, and it
+   * carries no run id to go correlate against logs/the audit trail if a run dies somewhere that
+   * never gets to post a failure message (see agent-runtime/src/handler.ts's `catch` block —
+   * that's the normal-exception path; a durable-checkpoint failure can tear the invocation down
+   * before even that runs). Rendered live, so a run stuck here for far longer than normal is
+   * itself the signal something went wrong. */
+  activeRuns?: Run[];
+  /** Marks a run in `activeRuns` failed (see services/api/src/routers/runs.ts's `POST /
+   * {runId}/cancel`) — omit to hide the Cancel button entirely. */
+  onCancelRun?: (runId: string) => void;
   onAddMember: () => void;
   onBrowsePeople: () => void;
   /** "tinted": agent messages sit in a light card. "flat": rendered inline like a person's. */
@@ -110,6 +135,8 @@ export function ChatScreen({
   onDeleteMessage: (messageId: string) => void;
   onRetryMessage: (messageId: string, text: string) => void;
   onDismissMessage: (messageId: string) => void;
+  /** The viewer clicked a button on an agent's A2UI card — omit to render such buttons inert. */
+  onA2uiAction?: (sourceMessageId: string, actionId: string, opts?: { value?: string; formData?: Record<string, string> }) => void;
   currentUserId: string;
   openArtifact?: ArtifactRef;
   artifactContent?: string;
@@ -118,7 +145,11 @@ export function ChatScreen({
   onOpenArtifact: (artifact: ArtifactRef) => void;
   onCloseArtifact: () => void;
 }) {
-  const isEmpty = !messagesLoading && messages.length === 0 && channel.kind === "group";
+  const hasOtherMembers = channelMembers.some((m) => m.id !== currentUserId);
+  // The "add a member" onboarding is only right for a genuinely empty channel. A group that already
+  // has people/agents but no messages yet should read as "start the conversation", not "no one here".
+  const isEmpty = !messagesLoading && messages.length === 0 && channel.kind === "group" && !hasOtherMembers;
+  const isEmptyGroup = !messagesLoading && messages.length === 0 && channel.kind === "group" && hasOtherMembers;
   const isEmptyDirect = !messagesLoading && messages.length === 0 && channel.kind === "direct";
   const groupFlags = useMemo(() => computeGroupFlags(messages), [messages]);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
@@ -128,18 +159,48 @@ export function ChatScreen({
   const artifactResize = useResizable({ storageKey: "ws-artifact-panel-width", defaultSize: 480, minSize: 320, maxSize: 720 });
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const prevScroll = useRef({ channelId: channel.id, scrollHeight: 0, scrollTop: 0, clientHeight: 0, count: 0, firstId: undefined as string | undefined });
+  const prevScroll = useRef({
+    channelId: channel.id,
+    scrollHeight: 0,
+    scrollTop: 0,
+    clientHeight: 0,
+    count: 0,
+    firstId: undefined as string | undefined,
+    lastId: undefined as string | undefined,
+  });
 
+  // Was keyed off `messages.length` growing, with no dependency array (reran on *every* render —
+  // a keystroke in the composer, `activeRuns` updating, anything). Two real bugs there: (1) a
+  // React Query cache invalidation (every "message.created" SSE event calls
+  // `invalidateQueries(["messages","list",channelId])`) can replace the whole page set rather than
+  // cleanly appending one item, so `.length` comparisons don't reliably reflect "a new message
+  // arrived" — the actual newest message id does, regardless of how the page boundaries reshuffle.
+  // (2) with no deps, an unrelated re-render (typing, a live run updating) could re-run this and
+  // recompute "was near bottom" against a scroll position that had nothing to do with a message
+  // arriving, silently eating the one chance to follow it down. Deps scoped to what this logic
+  // actually cares about — `[messages, channel.id]` — plus id-based diffing fixes both.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const prev = prevScroll.current;
+    const firstId = messages[0]?.id;
+    const lastId = messages[messages.length - 1]?.id;
 
-    if (prev.channelId !== channel.id) {
+    if (prev.channelId !== channel.id || prev.lastId === undefined) {
+      // Switched channels, or this is the first time this channel has any messages loaded at all
+      // (`lastId === undefined` covers a *second* case `channelId` alone can't: this same channel
+      // freshly finishing its first page fetch after being empty/loading) — either way, open at
+      // the bottom, not wherever the scroll container happened to default to.
       el.scrollTop = el.scrollHeight;
-    } else if (messages.length > prev.count && messages[0]?.id !== prev.firstId) {
+    } else if (firstId !== prev.firstId && messages.length > prev.count) {
+      // The oldest loaded message changed and the list grew: older history was prepended (the
+      // "load older" pagination this same container's `onScroll` triggers) — hold the reader's
+      // visual position steady rather than yanking them to the bottom.
       el.scrollTop = prev.scrollTop + (el.scrollHeight - prev.scrollHeight);
-    } else if (messages.length > prev.count) {
+    } else if (lastId !== prev.lastId) {
+      // The newest message changed — a real new arrival. Follow it down only if the reader was
+      // already at (or very near) the bottom; someone scrolled up to read history shouldn't get
+      // yanked away from it by an unrelated new message.
       const wasNearBottom = prev.scrollHeight - prev.scrollTop - prev.clientHeight < 120;
       if (wasNearBottom) el.scrollTop = el.scrollHeight;
     }
@@ -150,9 +211,10 @@ export function ChatScreen({
       scrollTop: el.scrollTop,
       clientHeight: el.clientHeight,
       count: messages.length,
-      firstId: messages[0]?.id,
+      firstId,
+      lastId,
     };
-  });
+  }, [messages, channel.id]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -210,7 +272,7 @@ export function ChatScreen({
               >
                 <span style={{ display: "flex" }}>
                   {memberStack.map((m, i) => {
-                    const pal = paletteFor(m.id);
+                    const pal = avatarColorsFor(m);
                     return (
                       <span key={m.id} style={{ marginLeft: i ? -7 : 0, borderRadius: radius.pill, border: `1.5px solid ${color.surface}` }}>
                         <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={20} square={m.kind === "agent"} />
@@ -292,7 +354,7 @@ export function ChatScreen({
             <div style={{ padding: 16, fontSize: 13, color: color.mutedLight }}>No one's in this channel yet.</div>
           )}
           {channelMembers.map((m) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             const canRemove = onRemoveMember && m.id !== currentUserId;
             return (
               <div key={m.id} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: radius.md }}>
@@ -333,7 +395,7 @@ export function ChatScreen({
                 Not in this channel
               </div>
               {addableMembers.map((m) => {
-                const pal = paletteFor(m.id);
+                const pal = avatarColorsFor(m);
                 return (
                   <div key={m.id} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: radius.md }}>
                     <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={26} square={m.kind === "agent"} />
@@ -429,6 +491,15 @@ export function ChatScreen({
               <div style={{ fontSize: 15, fontWeight: 600, marginTop: 6 }}>{channel.name}</div>
               <div style={{ fontSize: 13, color: color.mutedDark, textAlign: "center", maxWidth: 380, lineHeight: 1.5 }}>This is the start of your conversation.</div>
             </div>
+          ) : isEmptyGroup ? (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 40 }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>This is the start of #{channel.name}</div>
+              <div style={{ fontSize: 13, color: color.mutedDark, textAlign: "center", maxWidth: 380, lineHeight: 1.5 }}>
+                {channel.topic
+                  ? channel.topic
+                  : `${channelMembers.length} ${channelMembers.length === 1 ? "member is" : "members are"} here. Send a message or @mention an agent to get started.`}
+              </div>
+            </div>
           ) : (
             <div ref={scrollRef} onScroll={handleScroll} className="ws-sb" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px 0 8px" }}>
               {loadingOlder ? (
@@ -454,11 +525,19 @@ export function ChatScreen({
                     onRetryMessage={onRetryMessage}
                     onDismissMessage={onDismissMessage}
                     onOpenArtifact={onOpenArtifact}
+                    onA2uiAction={onA2uiAction}
                     isOwn={m.authorId === currentUserId}
                     isGroupStart={groupFlags[i]!.isGroupStart}
                     isGroupEnd={groupFlags[i]!.isGroupEnd}
                   />
                 ))}
+                {activeRuns && activeRuns.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                    {activeRuns.map((run) => (
+                      <RunningIndicator key={run.id} run={run} agent={membersById[run.agentId]} onOpenRun={onOpenRun} onCancelRun={onCancelRun} />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -551,10 +630,16 @@ function ArtifactPanel({
 }
 
 function ReactionGlyph({ emoji, size = 14 }: { emoji: string; size?: number }) {
-  // Reactions are stored as their native unicode character (from the emoji-mart picker), so this
-  // is just a sized text span — the wrapper stays so call sites don't have to special-case
-  // line-height/rendering of a bare emoji.
-  return <span style={{ fontSize: size, lineHeight: 1 }}>{emoji}</span>;
+  // Reactions are stored as their native unicode character (from the emoji-mart picker), but
+  // rendered through emoji-mart's own `<em-emoji>` custom element rather than a plain text span —
+  // a bare unicode char renders via whatever emoji font the OS happens to have, and on Linux (this
+  // app's primary dev target — see infra/README.md) that's frequently missing entirely, showing a
+  // blank box or a monochrome glyph instead of the emoji. `<em-emoji>` draws from the same "apple"
+  // image set `<EmojiPicker>` below uses, so a reaction looks identical to what was actually
+  // picked, on every platform. `createElement` with a non-literal tag name avoids having to teach
+  // TypeScript's JSX.IntrinsicElements about this one web component.
+  const tag = "em-emoji";
+  return createElement(tag, { native: emoji, size: `${size}px`, fallback: emoji });
 }
 
 function SourcesBubble({ citations }: { citations: Message["citations"] }) {
@@ -626,6 +711,7 @@ function MessageRow({
   onRetryMessage,
   onDismissMessage,
   onOpenArtifact,
+  onA2uiAction,
   isOwn,
   isGroupStart,
   isGroupEnd,
@@ -644,6 +730,7 @@ function MessageRow({
   onRetryMessage: (messageId: string, text: string) => void;
   onDismissMessage: (messageId: string) => void;
   onOpenArtifact: (artifact: ArtifactRef) => void;
+  onA2uiAction?: (sourceMessageId: string, actionId: string, opts?: { value?: string; formData?: Record<string, string> }) => void;
   isOwn: boolean;
   isGroupStart: boolean;
   isGroupEnd: boolean;
@@ -674,7 +761,7 @@ function MessageRow({
     );
   }
 
-  const pal = author ? paletteFor(author.id) : paletteFor("unknown");
+  const pal = avatarColorsFor(author, "unknown");
   const isAgent = author?.kind === "agent";
   const isPending = m.id.startsWith("optimistic-");
   const isFailed = m.id.startsWith("failed-");
@@ -690,11 +777,19 @@ function MessageRow({
     if (text && text !== m.text) onEditMessage(m.id, text);
   }
 
-  const body = m.text
-    ? isAgent
-      ? <Markdown>{m.text}</Markdown>
-      : <div style={{ fontSize: 14, lineHeight: 1.55, color: color.ink, whiteSpace: "pre-wrap" }}>{renderMessageText(m.text, channelMembers)}</div>
-    : null;
+  const body = m.a2uiAction
+    ? (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: color.muted, background: color.surfaceMuted, border: `1px solid ${color.border}`, borderRadius: radius.pill, padding: "3px 10px" }}>
+          <span aria-hidden>⚡</span>
+          {m.a2uiAction.label}
+          {m.a2uiAction.value ? <span style={{ color: color.mutedLight }}>· {m.a2uiAction.value}</span> : null}
+        </div>
+      )
+    : m.text
+      ? isAgent
+        ? <Markdown>{m.text}</Markdown>
+        : <div style={{ fontSize: 14, lineHeight: 1.55, color: color.ink, whiteSpace: "pre-wrap" }}>{renderMessageText(m.text, channelMembers)}</div>
+      : null;
 
   return (
     <div
@@ -777,6 +872,13 @@ function MessageRow({
 
         {m.tools.length > 0 && <AutonomousRunCard tools={m.tools} />}
 
+        {m.a2ui && (
+          <A2uiBlock
+            doc={m.a2ui}
+            onAction={onA2uiAction ? (a) => onA2uiAction(m.id, a.actionId, { value: a.value, formData: a.formData }) : undefined}
+          />
+        )}
+
         {m.artifact && (
           <button onClick={() => onOpenArtifact(m.artifact!)} className="ws-hoverable" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 12, width: "100%", border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12, background: color.surface, cursor: "pointer", textAlign: "left" }}>
             <div style={{ width: 32, height: 32, flex: "none", borderRadius: radius.md, background: color.surfaceMuted, display: "flex", alignItems: "center", justifyContent: "center", font: `600 10px ${font.mono}`, color: color.mutedDark }}>{m.artifact.ext}</div>
@@ -800,7 +902,11 @@ function MessageRow({
       </div>
 
       {hovered && !m.deletedAt && !editing && !isPending && !isFailed && (
-        <div style={{ position: "absolute", top: 0, right: 0, display: "flex", alignItems: "center", background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, boxShadow: "0 2px 8px #00000014" }}>
+        // Anchored to the message's bottom, not its top: a long reply otherwise puts this out of
+        // view while reading to the end, forcing a scroll back up just to react to it. The picker
+        // dropdown below opens *upward* (`bottom: "100%"`) to match — opening downward from a
+        // bottom-anchored button risks getting clipped by the composer right underneath it.
+        <div style={{ position: "absolute", bottom: 0, right: 0, display: "flex", alignItems: "center", background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, boxShadow: "0 2px 8px #00000014" }}>
           <div style={{ position: "relative" }}>
             <button onClick={() => setPickerOpen((v) => !v)} className="ws-hoverable" style={rowIconBtn} title="Add reaction">
               <SmileIcon />
@@ -808,9 +914,10 @@ function MessageRow({
             {pickerOpen && (
               <>
                 <div onClick={() => setPickerOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
-                <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 11 }}>
+                <div style={{ position: "absolute", bottom: "100%", right: 0, marginBottom: 4, zIndex: 11 }}>
                   <EmojiPicker
                     data={emojiData}
+                    set="apple"
                     onEmojiSelect={(emoji: { native?: string }) => {
                       if (emoji.native) onToggleReaction(m.id, emoji.native);
                       setPickerOpen(false);
@@ -845,6 +952,49 @@ function MessageRow({
         onConfirm={() => onDeleteMessage(m.id)}
         onClose={() => setConfirmDelete(false)}
       />
+    </div>
+  );
+}
+
+/** The live "a run is in flight" card — see the `activeRuns` prop's doc comment above for why this
+ * exists alongside the 👍 reaction. Clicking it opens the same run detail view "View run" does on
+ * a finished message, so the run id is always one click away, not just visible as text. */
+function RunningIndicator({ run, agent, onOpenRun, onCancelRun }: { run: Run; agent?: Member; onOpenRun: (runId: string) => void; onCancelRun?: (runId: string) => void }) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const label = run.status === "waiting_approval" ? "Waiting for approval" : "Running";
+  const pal = avatarColorsFor(agent, agent?.name);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", border: `1px solid ${color.borderLight}`, borderRadius: radius.lg, background: color.surfaceMuted }}>
+      <button
+        onClick={() => onOpenRun(run.id)}
+        className="ws-hoverable"
+        style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, border: "none", borderRadius: radius.lg, padding: "8px 12px", background: "none", cursor: "pointer", textAlign: "left" }}
+      >
+        <Avatar mono={agent ? agent.mono : "?"} bg={pal.bg} fg={pal.fg} size={20} square={agent?.kind === "agent"} />
+        <Spinner size={12} stroke={color.live} />
+        <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {agent?.name ?? "Agent"} · {label} · {run.title}
+        </span>
+        <span style={{ font: `400 11px ${font.mono}`, color: color.mutedLight, flex: "none" }}>#{run.id.slice(-6)} · {relativeTime(run.startedAt)}</span>
+      </button>
+      {onCancelRun && (
+        <>
+          <button onClick={() => setConfirmCancel(true)} className="ws-hoverable" style={{ flex: "none", height: 26, padding: "0 10px", marginRight: 6, border: `1px solid ${color.border}`, borderRadius: radius.md, background: color.surface, fontSize: 12, fontWeight: 500, color: color.mutedDark, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <ConfirmDialog
+            open={confirmCancel}
+            title="Cancel this run?"
+            message="It'll be stopped and marked as failed. This can't be undone."
+            confirmLabel="Cancel run"
+            onConfirm={() => {
+              setConfirmCancel(false);
+              onCancelRun(run.id);
+            }}
+            onClose={() => setConfirmCancel(false)}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -1074,7 +1224,7 @@ function Composer({
       {mention && candidates.length > 0 && (
         <div className="ws-sb" style={{ position: "absolute", bottom: "100%", left: 26, marginBottom: 6, width: 260, maxHeight: 220, overflowY: "auto", background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.lg, boxShadow: "0 8px 24px #00000026", padding: 4, zIndex: 10 }}>
           {candidates.map((m, i) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             return (
               <button key={m.id} onMouseDown={(e) => { e.preventDefault(); insertMention(m); }} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", height: 32, padding: "0 8px", borderRadius: radius.md, background: i === mention.index ? color.surfaceMuted : "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
                 <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={20} square={m.kind === "agent"} />

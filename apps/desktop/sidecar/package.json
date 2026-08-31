@@ -1,0 +1,24 @@
+{
+  "name": "@perch/desktop-sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Generic local Playwright runner, bundled into the Perch desktop app as a self-contained binary (Tauri externalBin). Drives an installed browser (detected at startup) or Playwright's Chromium. Tasks: probe / replay / record — connector setup and routines are ProcedureStep lists built on top.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node20 --external:playwright-core --outfile=dist/index.cjs && pkg dist/index.cjs --targets host --output dist/perch-sidecar --config package.json && node scripts/postbuild.mjs"
+  },
+  "dependencies": {
+    "@perch/core": "workspace:*",
+    "playwright-core": "^1.48.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@yao-pkg/pkg": "^6.22.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  },
+  "pkg": {
+    "assets": ["node_modules/playwright-core/**/*"]
+  }
+}

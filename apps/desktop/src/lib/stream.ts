@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { channelStreamEvent, type ChannelStreamEvent } from "@fizz/api-contract";
+import { channelStreamEvent, type ChannelStreamEvent } from "@perch/api-contract";
 
 /**
  * Subscribes to channel events via Rust's `subscribe_channel_events` command (see
@@ -27,12 +27,15 @@ export function useChannelStream(channelId: string | undefined, onEvent: (event:
       }
     };
 
-    console.debug("[channel stream]", channelId, "subscribing");
+    // `import.meta.env.DEV` (not a runtime check like `if (isDev())`) so a production build's
+    // minifier can constant-fold `if (false)` away entirely — this line, and every `console.debug`
+    // in this file, is gone from the shipped bundle, not just silent at runtime.
+    if (import.meta.env.DEV) console.debug("[channel stream]", channelId, "subscribing");
     invoke<string>("subscribe_channel_events", { channelId, onEvent: channel }).then((id) => {
       if (cancelled) {
         invoke("unsubscribe_channel_events", { id });
       } else {
-        console.debug("[channel stream]", channelId, "subscribed, id:", id);
+        if (import.meta.env.DEV) console.debug("[channel stream]", channelId, "subscribed, id:", id);
         subscriptionId = id;
       }
     }).catch((err) => {

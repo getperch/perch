@@ -28,7 +28,7 @@ export async function beginSignIn() {
 }
 
 /**
- * Finishes the flow once the `fizz://callback?code=...` URL comes back — normally via the
+ * Finishes the flow once the `perch://callback?code=...` URL comes back — normally via the
  * deep-link plugin (see main.tsx), but also callable with a manually pasted URL as a fallback
  * for environments where OS-level URL-scheme handling isn't reliable (e.g. `tauri dev` on Linux
  * without the app bundled/installed). Rust's `complete_sign_in` command does the token exchange

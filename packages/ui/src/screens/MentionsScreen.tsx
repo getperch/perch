@@ -4,10 +4,11 @@ import { AgentBadge } from "../primitives/AgentBadge.js";
 import { SegmentedControl } from "../primitives/SegmentedControl.js";
 import { MenuIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor, relativeTime, segmentText } from "../utils.js";
+import type { Member } from "@perch/core";
+import { avatarColorsFor, relativeTime, segmentText } from "../utils.js";
 
-/** Structural mirror of `@fizz/api-contract`'s `Mention` — kept local so `@fizz/ui` stays
- * decoupled from the contract package (it only depends on `@fizz/core`). */
+/** Structural mirror of `@perch/api-contract`'s `Mention` — kept local so `@perch/ui` stays
+ * decoupled from the contract package (it only depends on `@perch/core`). */
 export type Mention = {
   messageId: string;
   channelId: string;
@@ -25,20 +26,36 @@ type Filter = "all" | "unread" | "mentions";
 
 export function MentionsScreen({
   mentions,
+  members,
+  readIds,
+  onMarkRead,
   onOpenChannel,
   isNarrow,
   onOpenSidebar,
 }: {
   mentions: Mention[];
+  /** Workspace members, so each row's avatar can use the author's persisted color. */
+  members: Member[];
+  /** messageIds the user has already opened (persisted per-device — the server has no read cursor). */
+  readIds?: Set<string>;
+  /** Record one or more mentions as read; drives the row state and the sidebar badge. */
+  onMarkRead?: (messageIds: string[]) => void;
   onOpenChannel: (channelId: string) => void;
   isNarrow?: boolean;
   onOpenSidebar?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const unread = mentions.filter((m) => m.unread).length;
+  const membersById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const isUnread = (m: Mention) => m.unread && !readIds?.has(m.messageId);
+  const unread = mentions.filter(isUnread).length;
   // Every row in this feed is already an @mention of the current user, so "All" and "Mentions"
-  // show the same set today; "Unread" narrows to the last-24h heuristic.
-  const shown = useMemo(() => (filter === "unread" ? mentions.filter((m) => m.unread) : mentions), [mentions, filter]);
+  // show the same set today; "Unread" narrows to what's recent *and* not yet opened.
+  const shown = useMemo(() => (filter === "unread" ? mentions.filter(isUnread) : mentions), [mentions, filter, readIds]);
+
+  const openRow = (m: Mention) => {
+    onMarkRead?.([m.messageId]);
+    onOpenChannel(m.channelId);
+  };
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -56,6 +73,26 @@ export function MentionsScreen({
           </>
         )}
         <span style={{ flex: 1 }} />
+        {onMarkRead && unread > 0 && (
+          <button
+            onClick={() => onMarkRead(mentions.filter(isUnread).map((m) => m.messageId))}
+            className="ws-hoverable"
+            style={{
+              flex: "none",
+              height: 26,
+              padding: "0 10px",
+              border: `1px solid ${color.border}`,
+              borderRadius: radius.md,
+              background: color.surface,
+              font: `500 12px ${font.sans}`,
+              color: color.muted,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Mark all read
+          </button>
+        )}
         <SegmentedControl
           size="sm"
           value={filter}
@@ -71,11 +108,11 @@ export function MentionsScreen({
       <div className="ws-sb" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 0 24px" }}>
         <div style={{ maxWidth: 800, padding: "0 22px", display: "flex", flexDirection: "column", gap: 8 }}>
           {shown.map((m) => {
-            const pal = m.authorId ? paletteFor(m.authorId) : paletteFor(m.authorName);
+            const pal = avatarColorsFor(m.authorId ? membersById[m.authorId] : undefined, m.authorId ?? m.authorName);
             return (
               <button
                 key={m.messageId}
-                onClick={() => onOpenChannel(m.channelId)}
+                onClick={() => openRow(m)}
                 className="ws-hoverable"
                 style={{
                   display: "flex",
@@ -86,6 +123,7 @@ export function MentionsScreen({
                   cursor: "pointer",
                   background: color.surface,
                   textAlign: "left",
+                  opacity: isUnread(m) ? 1 : 0.6,
                 }}
               >
                 <Avatar mono={m.authorMono} bg={pal.bg} fg={pal.fg} size={32} square={m.authorKind === "agent"} />
@@ -96,9 +134,9 @@ export function MentionsScreen({
                     <span style={{ fontSize: 12.5, color: color.accentText }}>#{m.channelName}</span>
                     <span style={{ font: `400 11.5px ${font.mono}`, color: color.mutedLight }}>{relativeTime(m.createdAt)}</span>
                     <span style={{ flex: 1 }} />
-                    {m.unread && <span style={{ width: 7, height: 7, borderRadius: 5, background: color.accent }} />}
+                    {isUnread(m) && <span style={{ width: 7, height: 7, borderRadius: 5, background: color.accent }} />}
                   </div>
-                  <div style={{ fontSize: 13.5, color: "#33333B", lineHeight: 1.55 }}>
+                  <div style={{ fontSize: 13.5, color: "#413D4E", lineHeight: 1.55 }}>
                     {segmentText(m.text).map((p, i) =>
                       p.kind === "mention" ? (
                         <span key={i} style={{ background: color.accentTint, color: color.accentText, fontWeight: 500, padding: "1px 5px", borderRadius: 4 }}>

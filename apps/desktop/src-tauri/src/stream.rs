@@ -46,13 +46,22 @@ pub fn unsubscribe_channel_events(subscriptions: tauri::State<Subscriptions>, id
     }
 }
 
+/// Routine, expected-path tracing below (`starting`, `cursor advanced`, `status … bytes`, `parsed N
+/// frame(s)`) is `#[cfg(debug_assertions)]` — present in `tauri dev`/debug builds, compiled out of
+/// a release build entirely rather than merely silenced, since this loop fires every ~few seconds
+/// for the lifetime of every open channel and was drowning out everything else in the terminal.
+/// Genuine failure paths (a request erroring, a non-success status, a frame that failed to parse,
+/// the webview channel closing) stay unconditional — those are exactly what you'd want visible if
+/// this ever breaks for someone running a release build.
 async fn run(app: AppHandle, channel_id: String, on_event: Channel<GetChannelsChannelIdEventsResponse>) {
+    #[cfg(debug_assertions)]
     eprintln!("channel event stream[{channel_id}]: starting");
     let mut cursor = String::new();
     loop {
         match poll_once(&app, &channel_id, &cursor, &on_event).await {
             Ok(next_cursor) => {
                 if let Some(next_cursor) = next_cursor {
+                    #[cfg(debug_assertions)]
                     eprintln!("channel event stream[{channel_id}]: cursor advanced to {next_cursor}");
                     cursor = next_cursor;
                 }
@@ -103,6 +112,7 @@ async fn poll_once(
         return Err(format!("status {status}"));
     }
 
+    #[cfg(debug_assertions)]
     eprintln!(
         "channel event stream[{channel_id}]: status {status}, {} bytes",
         body.len()
@@ -139,6 +149,7 @@ async fn poll_once(
         }
     }
 
+    #[cfg(debug_assertions)]
     eprintln!("channel event stream[{channel_id}]: parsed {frame_count} event frame(s), cursor: {last_cursor:?}");
 
     if frame_count == 0 && !body.is_empty() {

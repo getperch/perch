@@ -1,10 +1,10 @@
 import { useState } from "react";
-import type { Channel, Member } from "@fizz/core";
+import type { Channel, Member } from "@perch/core";
 import { Avatar } from "./primitives/Avatar.js";
 import { SegmentedControl } from "./primitives/SegmentedControl.js";
 import { CloseIcon } from "./icons.js";
 import { color, font, radius } from "./tokens.js";
-import { paletteFor } from "./utils.js";
+import { avatarColorsFor } from "./utils.js";
 
 type Tab = "channel" | "people" | "agent";
 type Role = "member" | "admin";
@@ -154,7 +154,7 @@ export function AddToWorkspaceModal({
               <Label style={{ marginTop: 16 }}>Add members</Label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
                 {otherMembers.map((m) => {
-                  const pal = paletteFor(m.id);
+                  const pal = avatarColorsFor(m);
                   const on = chMemberIds.has(m.id);
                   return (
                     <button
@@ -328,7 +328,7 @@ function ChannelChips({ channels, selected, onToggle }: { channels: Channel[]; s
 }
 
 function Label({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ fontSize: 12.5, fontWeight: 500, color: "#33333B", marginBottom: 6, ...style }}>{children}</div>;
+  return <div style={{ fontSize: 12.5, fontWeight: 500, color: "#413D4E", marginBottom: 6, ...style }}>{children}</div>;
 }
 function Note({ children }: { children: React.ReactNode }) {
   return <div style={{ marginTop: 8, fontSize: 12.5, color: color.muted, lineHeight: 1.6 }}>{children}</div>;

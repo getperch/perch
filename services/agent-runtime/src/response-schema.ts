@@ -1,6 +1,12 @@
 export const CONCISENESS_INSTRUCTIONS =
   "Keep responses short and conversational, like a chat message — a few sentences, not a report. " +
   "Never use markdown headers or bullet lists for a simple answer. " +
+  "Compress your wording to cut filler without losing accuracy: drop articles, filler words, " +
+  "pleasantries, and hedging; fragments and short synonyms are fine; never drop negation, numbers, " +
+  "units, or technical precision. If a compressed phrasing isn't actually shorter than writing it " +
+  "plainly, write it plainly — clarity always wins over compression. Use full, normal prose for " +
+  "security warnings, confirming an irreversible action, and any multi-step sequence where a " +
+  "fragment would create ambiguity. " +
   'When you cite sources, do not link them inline — instead end your reply with a line that says exactly "Sources:" ' +
   "followed by one markdown link per line, e.g. [Site name](https://example.com).";
 
@@ -22,7 +28,11 @@ export const TOOL_USE_INSTRUCTIONS =
   "since your training data was collected. If it does, you MUST call the relevant tool BEFORE writing your " +
   "answer — do not answer from memory first and only search if unsure. Do not rely on your own knowledge for " +
   "these categories even if you feel confident; your training data has a cutoff and may already be stale. " +
-  "Only skip tools for questions that are clearly timeless (general explanations, definitions, math, etc.).";
+  "Only skip tools for questions that are clearly timeless (general explanations, definitions, math, etc.). " +
+  "When a tool's result includes a URL — a newly created issue, pull request, comment, or anything similar — " +
+  "always give it back as an actual clickable link, never as bare unlinked text: a markdown link " +
+  "(e.g. [issue #4](https://...)) in your written reply, or a Link component's `url` prop if you're building " +
+  "a card. A KeyValue/Table row showing a raw URL string is not clickable — don't rely on that alone.";
 
 const SOURCES_HEADING = /\n{1,2}\**sources:?\**\s*\n/i;
 const MARKDOWN_LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;

@@ -11,7 +11,7 @@ import {
   type OkfActor,
   type OkfConcept,
   type OkfLogKind,
-} from "@fizz/core";
+} from "@perch/core";
 
 /**
  * Human-side access to a workspace's Open Knowledge Format bundle in `AgentMemoryBucket`, under
