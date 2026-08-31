@@ -1,8 +1,8 @@
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { streamSSE } from "hono/streaming";
-import { channelId } from "@fizz/core";
-import { channelStreamEvent } from "@fizz/api-contract";
+import { channelId } from "@perch/core";
+import { channelStreamEvent } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
 

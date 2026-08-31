@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { channelStreamEvent, type ChannelStreamEvent } from "@fizz/api-contract";
+import { channelStreamEvent, type ChannelStreamEvent } from "@perch/api-contract";
 
 /**
  * Subscribes to channel events via Rust's `subscribe_channel_events` command (see

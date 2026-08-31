@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { radius } from "../tokens.js";
+import { PerchMark } from "../Brand.js";
 
 type AvatarProps = {
   mono: string;
@@ -10,6 +11,10 @@ type AvatarProps = {
   style?: CSSProperties;
 };
 
+/**
+ * Members render as an avatar: people (round) show their initials; agents (`square`) show the
+ * Perch bird knocked into a rounded tile — the flock reads at a glance in any member stack.
+ */
 export function Avatar({ mono, bg, fg, size = 32, square = false, style }: AvatarProps) {
   return (
     <span
@@ -28,7 +33,7 @@ export function Avatar({ mono, bg, fg, size = 32, square = false, style }: Avata
         ...style,
       }}
     >
-      {mono}
+      {square ? <PerchMark size={size * 0.62} color={fg} /> : mono}
     </span>
   );
 }

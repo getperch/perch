@@ -1,11 +1,28 @@
-import type { Member } from "@fizz/core";
+import type { Member } from "@perch/core";
 import { avatarPalette } from "./tokens.js";
 
-/** Deterministic avatar color from any stable id/name, so a member's color never flickers between renders. */
+/** Deterministic avatar color from any stable id/name, so a member's color never flickers between
+ * renders. Use this only where there's no persisted color to fall back on (e.g. built-in agent
+ * templates); for a real member, prefer {@link avatarColorsFor}. */
 export function paletteFor(seed: string) {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
   return avatarPalette[hash % avatarPalette.length]!;
+}
+
+/**
+ * The avatar colors to render for a member: the `colorBg`/`colorFg` persisted when the member was
+ * created, so every view of that member matches (the People list, the agent detail screen, the
+ * message list, …). Falls back to a deterministic hashed palette only when those aren't available —
+ * a caller holding just an id, e.g. a message author who has since left the workspace.
+ */
+export function avatarColorsFor(
+  member?: { colorBg?: string | null; colorFg?: string | null } | null,
+  fallbackSeed = "?",
+): { bg: string; fg: string } {
+  if (member?.colorBg && member.colorFg) return { bg: member.colorBg, fg: member.colorFg };
+  const pal = paletteFor(fallbackSeed);
+  return { bg: pal.bg, fg: pal.fg };
 }
 
 export function monoFor(name: string) {

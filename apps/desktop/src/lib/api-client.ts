@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { invoke } from "@tauri-apps/api/core";
-import { channels, members, mentions, models, messages, tasks, approvals, runs, workspace, plugins, googleWorkspace } from "@fizz/api-contract";
+import { channels, members, mentions, models, messages, tasks, approvals, runs, workspace, plugins, knowledge, procedures, connectors } from "@perch/api-contract";
 import { signOut } from "./auth.js";
 import { pushToast } from "./toasts.js";
 
@@ -22,7 +22,10 @@ async function invokeApi<T>(cmd: string, args: Record<string, unknown>, schema: 
       pushToast("info", "You were signed out — please sign in again");
       throw new Error("signed out");
     }
-    throw err;
+    // Tauri commands reject with a bare `String` (the server's error body). Re-throw it as a real
+    // Error so `onError: (err: Error) => err.message` handlers everywhere show the actual reason.
+    if (err instanceof Error) throw err;
+    throw new Error(typeof err === "string" ? err : JSON.stringify(err));
   }
 }
 
@@ -58,6 +61,8 @@ export const api = {
       invokeApi("messages_edit", { channelId, messageId, input: { text } }, messages.editMessageOutput),
     delete: (channelId: string, messageId: string) =>
       invokeApi("messages_delete", { channelId, messageId }, messages.deleteMessageOutput),
+    a2uiAction: (channelId: string, input: Body<typeof messages.a2uiActionInput, "channelId">) =>
+      invokeApi("messages_a2ui_action", { channelId, input }, messages.a2uiActionOutput),
   },
   members: {
     me: () => invokeApi("members_me", {}, members.meOutput),
@@ -66,9 +71,13 @@ export const api = {
       invokeApi("members_create_person", { input }, members.createPersonOutput),
     createAgent: (input: Body<typeof members.createAgentInput, "workspaceId">) =>
       invokeApi("members_create_agent", { input }, members.createAgentOutput),
-    updateAgent: (memberId: string, config: z.infer<typeof members.updateAgentInput>["config"]) =>
-      invokeApi("members_update_agent", { memberId, config }, members.updateAgentOutput),
+    updateAgent: (memberId: string, patch: Body<typeof members.updateAgentInput, "memberId">) =>
+      invokeApi("members_update_agent", { memberId, patch }, members.updateAgentOutput),
     delete: (memberId: string) => invokeApi("members_delete", { memberId }, members.deleteMemberOutput),
+    updatePerson: (memberId: string, name: string) =>
+      invokeApi("members_update_person", { memberId, input: { name } }, members.updatePersonOutput),
+    runSchedule: (memberId: string, triggerIndex: number) =>
+      invokeApi("members_run_schedule", { memberId, triggerIndex }, members.runAgentScheduleOutput),
   },
   mentions: {
     list: () => invokeApi("mentions_list", {}, mentions.listMentionsOutput),
@@ -101,24 +110,62 @@ export const api = {
     publish: (memberId: string) => invokeApi("plugins_publish", { input: { memberId } }, plugins.publishOutput),
     import: (url: string) => invokeApi("plugins_import", { input: { url } }, plugins.importOutput),
   },
+  knowledge: {
+    list: () => invokeApi("knowledge_list", {}, knowledge.listOutput),
+    get: (path: string) => invokeApi("knowledge_get", { path }, knowledge.getOutput),
+    put: (input: z.infer<typeof knowledge.putInput>) => invokeApi("knowledge_put", { input }, knowledge.putOutput),
+    deprecate: (path: string) => invokeApi("knowledge_deprecate", { input: { path } }, knowledge.deleteOutput),
+    verify: (path: string) => invokeApi("knowledge_verify", { input: { path } }, knowledge.verifyOutput),
+    reindex: () => invokeApi("knowledge_reindex", {}, knowledge.reindexOutput),
+  },
+  procedures: {
+    list: () => invokeApi("procedures_list", {}, procedures.listProceduresOutput),
+    get: (procedureId: string) => invokeApi("procedures_get", { procedureId }, procedures.getProcedureOutput),
+    create: (input: Body<typeof procedures.createProcedureInput, "workspaceId">) =>
+      invokeApi("procedures_create", { input }, procedures.createProcedureOutput),
+    update: (procedureId: string, input: Body<typeof procedures.updateProcedureInput, "procedureId">) =>
+      invokeApi("procedures_update", { procedureId, input }, procedures.updateProcedureOutput),
+    delete: (procedureId: string) => invokeApi("procedures_delete", { procedureId }, procedures.deleteProcedureOutput),
+    run: (procedureId: string) => invokeApi("procedures_run", { procedureId }, procedures.runProcedureOutput),
+    secrets: {
+      put: (procedureId: string, key: string, value: string) =>
+        invokeApi("procedures_secret_put", { procedureId, key, input: { value } }, procedures.putProcedureSecretOutput),
+      delete: (procedureId: string, key: string) =>
+        invokeApi("procedures_secret_delete", { procedureId, key }, procedures.deleteProcedureSecretOutput),
+    },
+    /** Run a ProcedureStep list in the user's own browser via the local Playwright sidecar.
+     * Streams `procedure:local` Tauri events; resolves with whatever `extract` steps captured. */
+    replayLocal: (steps: unknown, secrets?: Record<string, string>, startUrl?: string) =>
+      invokeApi("procedure_replay_local", { steps, secrets, startUrl }, z.record(z.string(), z.string())),
+    /** Record a routine by watching the user drive their own browser (local sidecar). Resolves
+     * with the captured steps when the window closes or `recordStopLocal` is called. */
+    recordLocal: (startUrl: string) =>
+      invokeApi("procedure_record_local", { startUrl }, z.object({ steps: z.array(z.unknown()), startUrl: z.string() })),
+    recordStopLocal: () => invokeApi("procedure_record_stop", {}, z.unknown()),
+    /** Move an in-progress local routine past its current humanCheckpoint / after a manual step. */
+    resumeLocal: () => invokeApi("procedure_resume", {}, z.unknown()),
+  },
   artifacts: {
     getContent: (url: string) => invokeApi("artifacts_get_content", { url }, z.string()),
   },
-  googleWorkspace: {
-    /** Fetches the OAuth client id and opens the system browser to Google's consent screen for
-     * `memberId` — resolves once the browser is opened, not once the flow completes (see
-     * `completeGoogleConnect`, driven by the `fizz://google-workspace-callback` deep link). */
-    beginConnect: (memberId: string) => invokeApi("begin_google_connect", { memberId }, z.void()),
-    /** Finishes the flow once the deep link routes back into the app (see main.tsx) — the Rust
-     * side does the token exchange with the backend and returns the connected email. */
-    completeConnect: (callbackUrl: string) => invokeApi("complete_google_connect", { callbackUrl }, googleWorkspace.connectOutput),
-    getConnection: (memberId: string) => invokeApi("google_workspace_get_connection", { memberId }, googleWorkspace.getConnectionOutput),
-    disconnect: (memberId: string) => invokeApi("disconnect_google_workspace", { memberId }, googleWorkspace.disconnectOutput),
-    /** Backs the Settings screen's Google Workspace card — the one workspace-level OAuth client,
-     * configured at runtime rather than via `sst secret set`. */
-    getStatus: () => invokeApi("google_workspace_get_client_status", {}, googleWorkspace.getClientStatusOutput),
-    saveClient: (clientId: string, clientSecret: string) =>
-      invokeApi("google_workspace_save_client", { input: { clientId, clientSecret } }, googleWorkspace.putClientOutput),
-    clearClient: () => invokeApi("google_workspace_clear_client", {}, googleWorkspace.deleteClientOutput),
+  connectors: {
+    /** Backs the Settings → Connectors page: every connector Perch supports plus this workspace's
+     * current config state for each. Secrets are never returned. */
+    list: () => invokeApi("connector_list", {}, connectors.listConnectorsOutput),
+    /** Enter/update one connector's workspace-level credentials. `values` keys are validated
+     * server-side against that connector's declared fields. */
+    saveConfig: (connectorId: string, values: Record<string, string>) =>
+      invokeApi("connector_save_config", { connectorId, input: { values } }, connectors.putConnectorConfigOutput),
+    clearConfig: (connectorId: string) => invokeApi("connector_clear_config", { connectorId }, connectors.deleteConnectorConfigOutput),
+
+    /** Startup check — which browsers the local sidecar can drive. */
+    listBrowsers: () => invokeApi("list_browsers", {}, z.object({ system: z.array(z.string()), bundled: z.boolean() })),
+
+    /** Per-agent Google Workspace connect flow — opens the system browser to Google's consent
+     * screen for `memberId` and resolves with the connected account once the OAuth loopback
+     * completes (the Rust command runs a local `http://127.0.0.1` listener; see google_workspace.rs). */
+    beginConnect: (memberId: string) => invokeApi("begin_google_connect", { memberId }, connectors.connectOutput),
+    getConnection: (memberId: string) => invokeApi("google_workspace_get_connection", { memberId }, connectors.getConnectionOutput),
+    disconnect: (memberId: string) => invokeApi("disconnect_google_workspace", { memberId }, connectors.disconnectOutput),
   },
 };

@@ -4,9 +4,9 @@ import { workflow } from "sst/aws/workflow";
 import { ulid } from "ulid";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import type { Member, Message } from "@fizz/core";
-import { channelId, humanActor, messageId } from "@fizz/core";
-import { messages as contract } from "@fizz/api-contract";
+import type { Member, Message } from "@perch/core";
+import { a2uiDocument, channelId, humanActor, messageId } from "@perch/core";
+import { messages as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
@@ -180,6 +180,113 @@ messagesApp.openapi(
         ),
       );
     }
+
+    return c.json(message);
+  },
+);
+
+/**
+ * `POST /channels/{channelId}/a2ui-actions` — the viewer clicked an A2UI `Button` on an agent's
+ * card. This is the interactivity round-trip: record it as a normal user message
+ * (`[ui-action] …`) and start a follow-up `mode: "direct"` turn for the agent that authored the
+ * card, so the agent can react in its reply (re-render the card, confirm, fetch more). The click
+ * is only honoured if `actionId` matches a Button actually present on that message — an agent can
+ * only be driven by actions it declared.
+ */
+messagesApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{channelId}/a2ui-actions",
+    request: {
+      params: z.object({ channelId }),
+      body: { content: { "application/json": { schema: contract.a2uiActionInput.omit({ channelId: true }) } } },
+    },
+    responses: { 200: { content: { "application/json": { schema: contract.a2uiActionOutput } }, description: "OK" } },
+  }),
+  async (c) => {
+    const ctx = ctxOf(c);
+    const { channelId: id } = c.req.valid("param");
+    const { sourceMessageId, actionId, value, formData } = c.req.valid("json");
+
+    const srcRes = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `CHANNEL#${id}`, sk: `MSG#${sourceMessageId}` } }));
+    if (!srcRes.Item) throw new HTTPException(404, { message: `message ${sourceMessageId} not found` });
+    const source: Message = srcRes.Item.message;
+
+    // Re-validate the card against the strict catalog and confirm the action is one it actually
+    // declared — an agent can only be driven by a Button/Form it put on its own card.
+    const card = a2uiDocument.safeParse(source.a2ui);
+    const target = card.success
+      ? card.data.components.find(
+          (comp) => (comp.type === "Button" || comp.type === "Form") && comp.props.actionId === actionId,
+        )
+      : undefined;
+    if (!target || (target.type !== "Button" && target.type !== "Form")) {
+      throw new HTTPException(400, { message: `no action "${actionId}" on message ${sourceMessageId}` });
+    }
+    if (!source.authorId) throw new HTTPException(400, { message: "source message has no author to notify" });
+
+    // For a Form, keep only the values whose field names it declared, and enforce `required`.
+    const orderedFields: { name: string; value: string }[] = [];
+    let label: string;
+    if (target.type === "Form" && card.success) {
+      const fields = target.children
+        .map((cid) => card.data.components.find((comp) => comp.id === cid))
+        .filter((comp): comp is Extract<typeof comp, { type: "Field" }> => comp?.type === "Field");
+      for (const f of fields) {
+        const v = (formData ?? {})[f.props.name]?.trim() ?? "";
+        if (f.props.required && !v) throw new HTTPException(400, { message: `field "${f.props.name}" is required` });
+        if (v) orderedFields.push({ name: f.props.name, value: v });
+      }
+      label = target.props.submitLabel;
+    } else {
+      label = (target as Extract<typeof target, { type: "Button" }>).props.label;
+    }
+
+    const [channelRes, agentRes] = await Promise.all([
+      ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `WORKSPACE#${ctx.workspaceId}`, sk: `CHANNEL#${id}` } })),
+      ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `WORKSPACE#${ctx.workspaceId}`, sk: `MEMBER#${source.authorId}` } })),
+    ]);
+    const channel = channelRes.Item?.channel;
+    const agent = agentRes.Item?.member as Member | undefined;
+    if (!agent || agent.kind !== "agent") throw new HTTPException(400, { message: "the card's author is not an agent" });
+
+    const detail = [
+      value ? `value=${value}` : undefined,
+      ...orderedFields.map((f) => `${f.name}: ${f.value}`),
+    ].filter(Boolean);
+    const prompt = `[ui-action] ${label} (actionId=${actionId})${detail.length ? `\n${detail.join("\n")}` : ""}`;
+    const message = {
+      id: ulid(),
+      workspaceId: ctx.workspaceId,
+      channelId: id,
+      authorId: ctx.actorId,
+      isSystem: false,
+      text: prompt,
+      a2uiAction: { sourceMessageId, actionId, label, value },
+      tools: [],
+      citations: [],
+      reactions: [],
+      createdAt: new Date().toISOString(),
+    };
+    await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${id}`, sk: `MSG#${message.id}`, message } }));
+    await appendChannelEvent(id, { type: "message.created", channelId: id, message });
+    await emit(ctx, "message.sent", { messageId: message.id, channelId: id });
+
+    await workflow.start(Resource.AgentRuntime, {
+      name: `${message.id}-${agent.id}`,
+      payload: {
+        workspaceId: ctx.workspaceId,
+        channelId: id,
+        messageId: message.id,
+        mode: "direct",
+        agentId: agent.id,
+        triggeredBy: "ui-action",
+        actorId: ctx.actorId,
+        channelName: channel?.name,
+        channelTopic: channel?.topic,
+        prompt,
+      },
+    });
 
     return c.json(message);
   },

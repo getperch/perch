@@ -1,8 +1,8 @@
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { humanActor, type Member, type OkfConcept } from "@fizz/core";
-import { knowledge as contract } from "@fizz/api-contract";
+import { humanActor, type Member, type OkfConcept } from "@perch/core";
+import { knowledge as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";

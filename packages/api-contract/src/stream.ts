@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { approval, channelId, message, run, runStep, task } from "@fizz/core";
+import { approval, channelId, message, run, runStep, task } from "@perch/core";
 
 /**
  * The event union sent down `GET /channels/{id}/events` as SSE `data:` payloads.

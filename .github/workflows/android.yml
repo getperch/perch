@@ -48,6 +48,13 @@ jobs:
           export NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
           pnpm tauri android init
 
+      # `tauri android init` seeds gen/android with the template's placeholder launcher icons;
+      # regenerate them (and the adaptive-icon background colour) from the committed Perch source
+      # so the APK ships the real brand icon. gen/android is gitignored, so this must run in CI.
+      - name: Apply app icons
+        working-directory: apps/desktop
+        run: pnpm tauri icon src-tauri/app-icon.json --ios-color "#7D35EB"
+
       - name: Build debug APK
         working-directory: apps/desktop
         run: |
@@ -63,6 +70,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fizz-android-debug
+          name: perch-android-debug
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error

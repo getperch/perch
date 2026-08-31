@@ -52,6 +52,10 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bus"
     }
+    "ProcedureScheduler": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
     "Table": {
       "name": string
       "type": "sst.aws.Dynamo"

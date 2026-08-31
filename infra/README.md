@@ -10,7 +10,7 @@ requires `sst.config.ts` to live at the project root it's run from — see that 
 | Workspace | `WORKSPACE#<id>` | `META` |
 | Channel | `WORKSPACE#<id>` | `CHANNEL#<id>` |
 | Member | `WORKSPACE#<id>` | `MEMBER#<id>` |
-| Google Workspace connection (per-agent, non-secret metadata — the refresh token itself is an SSM `SecureString` at `/fizz/<stage>/<workspaceId>/agents/<memberId>/google-workspace-refresh-token`, not in this table) | `WORKSPACE#<id>` | `MEMBER#<id>#GOOGLE_WORKSPACE` |
+| Google Workspace connection (per-agent, non-secret metadata — the refresh token itself is an SSM `SecureString` at `/perch/<stage>/<workspaceId>/agents/<memberId>/google-workspace-refresh-token`, not in this table) | `WORKSPACE#<id>` | `MEMBER#<id>#GOOGLE_WORKSPACE` |
 | Task | `WORKSPACE#<id>` | `TASK#<id>` |
 | Approval | `WORKSPACE#<id>` | `APPROVAL#<id>` |
 | Run | `WORKSPACE#<id>` | `RUN#<id>` |
@@ -172,7 +172,7 @@ fabricated connection — until the manual setup below is done.
    Google issues both a client ID and a client secret for this type — this app needs both (the
    token exchange happens server-side in `services/api`, not in the Rust binary, so the secret is
    never embedded in anything shipped to a user's machine).
-4. In the Fizz desktop app, open **Settings → Integrations → Google Workspace** and paste in the
+4. In the Perch desktop app, open **Settings → Integrations → Google Workspace** and paste in the
    client ID and client secret, then Save. This is a runtime, per-workspace configuration step —
    not a deploy-time one: it's stored as an SSM `SecureString` (`PUT /google-workspace/client`,
    see `services/api/src/google-oauth.ts`'s `storeGoogleOAuthClient`/`googleOAuthClientSsmPath`),
@@ -183,11 +183,12 @@ fabricated connection — until the manual setup below is done.
    admin needs to add the Google OAuth client in Settings → Integrations" error rather than
    crashing or pretending to work — see `services/api/src/google-oauth.ts`'s
    `requireGoogleOAuthClient`.
-5. No redirect URI needs registering in Google Cloud Console's credential config for a Desktop
-   app OAuth client — Google allows `http://localhost`/custom-scheme redirects for that client
-   type without an allowlist. The redirect used here is `fizz://google-workspace-callback`,
-   handled by the `fizz://` scheme already registered app-wide in
-   `apps/desktop/src-tauri/tauri.conf.json`.
+5. No redirect URI needs registering for a Desktop app OAuth client — Google allows
+   `http://127.0.0.1:<port>` / `http://localhost:<port>` **loopback** redirects for that client
+   type without an allowlist. The desktop connect flow (`apps/desktop/src-tauri/src/google_workspace.rs`)
+   binds a throwaway `127.0.0.1` listener per attempt and uses that as the `redirect_uri`.
+   (Custom URI schemes like `perch://…` are **not** accepted for Desktop clients — Google returns
+   `Error 400: invalid_request`; they're only for iOS/Android client types.)
 
 **Not yet verified** (flagged the same way as the other integrations below): the real Google
 token/userinfo endpoints haven't been exercised against a live OAuth client — the request/response
@@ -200,7 +201,7 @@ id/secret pair is set.
 `services/api/openapi.json` is committed, not generated at build time — `apps/desktop/src-tauri`'s
 `build.rs` reads it directly and generates Rust request/response structs from it via `typify` on
 every `cargo build`. Whenever a route's Zod input/output schema changes in `services/api/src/
-routers/*.ts`, re-run `pnpm --filter @fizz/api generate-openapi` and commit the updated
+routers/*.ts`, re-run `pnpm --filter @perch/api generate-openapi` and commit the updated
 `openapi.json` so the Rust side picks up the change on its next build. `@hono/zod-openapi` inlines
 every schema at its usage site here (no route calls `.openapi("Name")`, so `components.schemas` is
 always empty) — `build.rs` walks `paths` directly and generates one named type per request/response

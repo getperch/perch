@@ -2,8 +2,8 @@ import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { agentToPlugin, member as memberSchema, pluginIndex, pluginManifest, type PluginIndexEntry } from "@fizz/core";
-import { plugins as contract } from "@fizz/api-contract";
+import { agentToPlugin, member as memberSchema, pluginIndex, pluginManifest, type PluginIndexEntry } from "@perch/core";
+import { plugins as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
@@ -156,7 +156,7 @@ pluginsApp.openapi(
 
 /**
  * "Import from URL…" in the Add member -> Agent screen's plugin picker — pulls a plugin.json +
- * its SKILL.md from outside this fizz instance (e.g. a plugin published by someone else's
+ * its SKILL.md from outside this perch instance (e.g. a plugin published by someone else's
  * deployment, or a plain agent-plugins.org registry). Restricted to hosts the workspace has
  * explicitly trusted (Settings -> Trusted plugin registries), on top of ssrf-guard's baseline
  * hardening — this endpoint fetches a URL the caller supplies, so both layers matter.

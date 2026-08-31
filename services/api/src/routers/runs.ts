@@ -1,8 +1,8 @@
 import { GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { runId } from "@fizz/core";
-import { runs as contract } from "@fizz/api-contract";
+import { runId } from "@perch/core";
+import { runs as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
 

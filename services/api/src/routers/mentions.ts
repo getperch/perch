@@ -1,7 +1,7 @@
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import type { Channel, Member, Message } from "@fizz/core";
-import { mentions as contract } from "@fizz/api-contract";
+import type { Channel, Member, Message } from "@perch/core";
+import { mentions as contract } from "@perch/api-contract";
 import type { AppEnv } from "../context.js";
 import { ctxOf } from "../context.js";
 import { ddb, TABLE_NAME } from "../db.js";
@@ -79,7 +79,11 @@ mentionsApp.openapi(
           .map((i) => i.message as Message)
           .filter((m) => {
             if (m.isSystem || m.deletedAt || !m.text || m.authorId === actorId) return false;
-            const hits = [...m.text.matchAll(/@([A-Za-z0-9][A-Za-z0-9_-]*)/g)].map((x) => x[1]!.toLowerCase());
+            // `.` is allowed in the token body: a person's token is `name → lowercase → spaces
+            // to hyphens` (see packages/ui `mentionTokenFor`), so a name like "rob.s.shepherd"
+            // keeps its dots — without this the scan stopped at the first dot and that person
+            // could never be @mentioned (or notified of a scheduled run's DM).
+            const hits = [...m.text.matchAll(/@([A-Za-z0-9][A-Za-z0-9._-]*)/g)].map((x) => x[1]!.toLowerCase().replace(/\.+$/, ""));
             return hits.some((h) => tokens.has(h));
           })
           .map((m) => {

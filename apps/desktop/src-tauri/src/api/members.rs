@@ -25,6 +25,15 @@ pub async fn members_delete(app: AppHandle, member_id: String) -> Result<DeleteM
 }
 
 #[tauri::command]
+pub async fn members_update_person(
+    app: AppHandle,
+    member_id: String,
+    input: PatchMembersPeopleMemberIdRequest,
+) -> Result<PatchMembersPeopleMemberIdResponse, String> {
+    call(&app, Method::PATCH, &format!("/members/people/{member_id}"), Some(&input)).await
+}
+
+#[tauri::command]
 pub async fn members_create_agent(app: AppHandle, input: PostMembersAgentsRequest) -> Result<PostMembersAgentsResponse, String> {
     call(&app, Method::POST, "/members/agents", Some(&input)).await
 }
@@ -33,7 +42,22 @@ pub async fn members_create_agent(app: AppHandle, input: PostMembersAgentsReques
 pub async fn members_update_agent(
     app: AppHandle,
     member_id: String,
-    config: PatchMembersAgentsMemberIdRequest,
+    patch: PatchMembersAgentsMemberIdRequest,
 ) -> Result<PatchMembersAgentsMemberIdResponse, String> {
-    call(&app, Method::PATCH, &format!("/members/agents/{member_id}"), Some(&config)).await
+    call(&app, Method::PATCH, &format!("/members/agents/{member_id}"), Some(&patch)).await
+}
+
+#[tauri::command]
+pub async fn members_run_schedule(
+    app: AppHandle,
+    member_id: String,
+    trigger_index: u32,
+) -> Result<PostMembersAgentsMemberIdSchedulesTriggerIndexRunResponse, String> {
+    call(
+        &app,
+        Method::POST,
+        &format!("/members/agents/{member_id}/schedules/{trigger_index}/run"),
+        None::<&()>,
+    )
+    .await
 }

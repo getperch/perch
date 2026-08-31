@@ -3,6 +3,7 @@ use std::time::Duration;
 mod api;
 mod auth;
 mod google_workspace;
+mod sidecar;
 mod store;
 mod stream;
 
@@ -23,23 +24,29 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(http_client)
         .manage(auth::PendingVerifier::default())
-        .manage(google_workspace::PendingGoogleVerifier::default())
         .manage(stream::Subscriptions::default())
+        .manage(sidecar::RecordingChild::default())
         .invoke_handler(tauri::generate_handler![
             auth::begin_sign_in,
             auth::complete_sign_in,
             google_workspace::begin_google_connect,
-            google_workspace::complete_google_connect,
             google_workspace::disconnect_google_workspace,
-            api::google_workspace::google_workspace_get_connection,
-            api::google_workspace::google_workspace_get_client_status,
-            api::google_workspace::google_workspace_save_client,
-            api::google_workspace::google_workspace_clear_client,
+            api::connectors::google_workspace_get_connection,
+            api::connectors::connector_list,
+            api::connectors::connector_save_config,
+            api::connectors::connector_clear_config,
+            sidecar::list_browsers,
+            sidecar::procedure_replay_local,
+            sidecar::procedure_record_local,
+            sidecar::procedure_record_stop,
+            sidecar::procedure_resume,
             api::channels::channels_list,
             api::channels::channels_get,
             api::channels::channels_create,
@@ -53,11 +60,14 @@ pub fn run() {
             api::messages::messages_toggle_reaction,
             api::messages::messages_edit,
             api::messages::messages_delete,
+            api::messages::messages_a2ui_action,
             api::members::members_me,
             api::members::members_list,
             api::members::members_create_person,
             api::members::members_create_agent,
             api::members::members_update_agent,
+            api::members::members_run_schedule,
+            api::members::members_update_person,
             api::members::members_delete,
             api::mentions::mentions_list,
             api::models::models_list,
@@ -75,9 +85,23 @@ pub fn run() {
             api::plugins::plugins_get,
             api::plugins::plugins_publish,
             api::plugins::plugins_import,
+            api::knowledge::knowledge_list,
+            api::knowledge::knowledge_get,
+            api::knowledge::knowledge_put,
+            api::knowledge::knowledge_deprecate,
+            api::knowledge::knowledge_verify,
+            api::knowledge::knowledge_reindex,
+            api::procedures::procedures_list,
+            api::procedures::procedures_get,
+            api::procedures::procedures_create,
+            api::procedures::procedures_update,
+            api::procedures::procedures_delete,
+            api::procedures::procedures_secret_put,
+            api::procedures::procedures_secret_delete,
+            api::procedures::procedures_run,
             stream::subscribe_channel_events,
             stream::unsubscribe_channel_events,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Fizz");
+        .expect("error while running Perch");
 }

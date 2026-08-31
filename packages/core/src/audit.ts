@@ -28,12 +28,17 @@ export const auditEventType = z.enum([
   "approval.denied",
   "task.created",
   "task.updated",
-  "google_workspace.connected",
-  "google_workspace.disconnected",
+  "connector.connected",
+  "connector.disconnected",
   "knowledge.created",
   "knowledge.updated",
   "knowledge.deprecated",
   "knowledge.verified",
+  "procedure.created",
+  "procedure.updated",
+  "procedure.deleted",
+  "procedure.run",
+  "schedule.run",
 ]);
 export type AuditEventType = z.infer<typeof auditEventType>;
 

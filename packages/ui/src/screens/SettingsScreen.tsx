@@ -1,14 +1,19 @@
 import { useState } from "react";
-import type { ApprovalPolicy, Member, Workspace } from "@fizz/core";
+import type { ApprovalPolicy, ConnectorDescriptor, Member, Workspace } from "@perch/core";
+import { ModelSelect, type ModelOption } from "./AddMemberScreen.js";
 import { Avatar } from "../primitives/Avatar.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
 import { SegmentedControl } from "../primitives/SegmentedControl.js";
 import { ConfirmDialog } from "../primitives/ConfirmDialog.js";
 import { MenuIcon, PlusLargeIcon, TrashIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor } from "../utils.js";
+import { avatarColorsFor } from "../utils.js";
 
-type Section = "general" | "people" | "advanced";
+type Section = "general" | "people" | "connectors" | "advanced";
+
+/** One row on the Connectors page: the static descriptor plus this workspace's current state
+ * (mirrors `connectorSummary` in @perch/api-contract). */
+export type ConnectorRow = ConnectorDescriptor & { configured: boolean; publicValues?: Record<string, string> };
 
 const APPROVAL_POLICIES: { id: ApprovalPolicy; name: string; sub: string }[] = [
   { id: "channel", name: "Anyone in the channel", sub: "Fastest. Everyone present can unblock an agent." },
@@ -26,24 +31,31 @@ export function SettingsScreen({
   initialSection = "general",
   workspace,
   members,
+  availableModels,
   spendCapSaving,
   spendCapError,
   settingsSaving,
   settingsError,
-  googleWorkspaceStatus,
-  googleWorkspaceSaving,
-  googleWorkspaceError,
+  connectors,
+  connectorsSaving,
+  connectorsError,
   onSpendCapChange,
+  onNameChange,
   onApprovalPolicyChange,
   onLimitsChange,
+  onDefaultModelChange,
   onTrustedRegistriesChange,
-  onGoogleWorkspaceClientSave,
-  onGoogleWorkspaceClientClear,
+  onConnectorConfigSave,
+  onConnectorConfigClear,
+  onStartConnectorSetup,
   onAddPeople,
   onOpenMember,
   onConfigureAgent,
   onDeleteMember,
   currentUserId,
+  currentUserName,
+  profileNameSaving,
+  onProfileNameChange,
   onSignOut,
   isNarrow,
   onOpenSidebar,
@@ -51,21 +63,30 @@ export function SettingsScreen({
   initialSection?: Section;
   workspace: Workspace;
   members: Member[];
+  availableModels: ModelOption[];
   currentUserId: string;
   onDeleteMember: (memberId: string) => void;
+  currentUserName: string;
+  profileNameSaving?: boolean;
+  onProfileNameChange: (name: string) => void;
   spendCapSaving?: boolean;
   spendCapError?: string;
   settingsSaving?: boolean;
   settingsError?: string;
-  googleWorkspaceStatus?: { configured: boolean; clientId?: string };
-  googleWorkspaceSaving?: boolean;
-  googleWorkspaceError?: string;
+  connectors?: ConnectorRow[];
+  connectorsSaving?: boolean;
+  connectorsError?: string;
   onSpendCapChange: (usd: number) => void;
+  onNameChange: (name: string) => void;
   onApprovalPolicyChange: (policy: ApprovalPolicy) => void;
   onLimitsChange: (limits: { maxStepsPerRun?: number; maxConcurrentRuns?: number }) => void;
+  /** Empty string clears the default back to "creator picks". */
+  onDefaultModelChange: (modelId: string) => void;
   onTrustedRegistriesChange: (hosts: string[]) => void;
-  onGoogleWorkspaceClientSave: (client: { clientId: string; clientSecret: string }) => void;
-  onGoogleWorkspaceClientClear: () => void;
+  onConnectorConfigSave: (connectorId: string, values: Record<string, string>) => void;
+  onConnectorConfigClear: (connectorId: string) => void;
+  /** Google Workspace only: kick off the agent-assisted Cloud Console setup flow. */
+  onStartConnectorSetup?: (connectorId: string) => void;
   onAddPeople: () => void;
   onOpenMember: (memberId: string) => void;
   onConfigureAgent: (memberId: string) => void;
@@ -78,10 +99,16 @@ export function SettingsScreen({
   const [flags, setFlags] = useState<Record<string, boolean>>({ createChannels: true, agentsJoin: true, namedApprover: true });
   const [wsAutonomy, setWsAutonomy] = useState<"read" | "ask" | "auto">("ask");
   const [pendingRemove, setPendingRemove] = useState<Member | null>(null);
+  // Connectors is a master-detail pane: pick one on the left, configure it on the right. Falls
+  // back to the first connector so the pane is never empty on a wide screen.
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
+  // No fallback — the detail pane stays empty until a connector is actually clicked.
+  const activeConnector = connectors?.find((c) => c.id === selectedConnectorId);
 
   const nav: { key: Section; label: string }[] = [
     { key: "general", label: "General" },
     { key: "people", label: "People" },
+    { key: "connectors", label: "Connectors" },
     { key: "advanced", label: "Advanced" },
   ];
 
@@ -118,24 +145,71 @@ export function SettingsScreen({
           </div>
         )}
 
-        <div className="ws-sb" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 0 30px" }}>
-          <div style={{ maxWidth: 620, padding: "0 26px" }}>
-            {isNarrow && (
+        <div className="ws-sb" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {isNarrow && (
+            <div style={{ padding: "16px 26px 0" }}>
               <SegmentedControl
-                style={{ marginBottom: 20 }}
                 value={section}
                 onChange={setSection}
                 options={nav.map((n) => ({ value: n.key, label: n.label }))}
               />
-            )}
+            </div>
+          )}
+
+          {section === "connectors" && !isNarrow ? (
+            <ConnectorsMasterDetail
+              connectors={connectors}
+              error={connectorsError}
+              saving={connectorsSaving}
+              activeConnector={activeConnector}
+              onSelect={setSelectedConnectorId}
+              onSave={onConnectorConfigSave}
+              onClear={onConnectorConfigClear}
+              onStartSetup={onStartConnectorSetup}
+            />
+          ) : (
+          <div className="ws-sb" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 0 30px" }}>
+          <div style={{ maxWidth: 620, padding: "0 26px" }}>
 
             {section === "general" && (
               <>
                 <H>General</H>
-                <Sub>Name and the defaults every new channel and agent inherits.</Sub>
+                <Sub>Your name, the workspace name, and the defaults every new channel and agent inherits.</Sub>
 
-                <FieldLabel style={{ marginTop: 20 }}>Workspace name</FieldLabel>
-                <input value={workspace.name} readOnly style={{ ...inputBox, color: color.mutedDark }} />
+                <FieldLabel style={{ marginTop: 20 }}>Your name</FieldLabel>
+                <WorkspaceNameField
+                  key={currentUserName}
+                  value={currentUserName}
+                  saving={profileNameSaving}
+                  onCommit={onProfileNameChange}
+                />
+                <div style={{ marginTop: 6, fontSize: 12, color: color.mutedLight }}>How you appear to everyone, and the name agents @mention you by.</div>
+
+                <FieldLabel style={{ marginTop: 22 }}>Workspace name</FieldLabel>
+                <WorkspaceNameField
+                  key={workspace.name}
+                  value={workspace.name}
+                  saving={settingsSaving}
+                  error={settingsError}
+                  onCommit={onNameChange}
+                />
+                <div style={{ marginTop: 6, fontSize: 12, color: color.mutedLight }}>Shown to everyone in the workspace.</div>
+
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 22, marginBottom: 7 }}>
+                  <FieldLabel style={{ marginBottom: 0 }}>Default model for new agents</FieldLabel>
+                  {workspace.defaultModel && (
+                    <button
+                      onClick={() => onDefaultModelChange("")}
+                      style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: color.muted, cursor: "pointer" }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <ModelSelect models={availableModels} value={workspace.defaultModel ?? ""} onChange={onDefaultModelChange} />
+                <div style={{ marginTop: 7, fontSize: 12, color: color.mutedLight, lineHeight: 1.55 }}>
+                  Pre-fills the model picker when someone adds an agent. They can still choose a different one.
+                </div>
 
                 <FieldLabel style={{ marginTop: 22 }}>Default approval policy</FieldLabel>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -185,7 +259,7 @@ export function SettingsScreen({
 
                 <div style={{ marginTop: 18, border: `1px solid ${color.border}`, borderRadius: radius.lg, overflow: "hidden" }}>
                   {sortMembers(members).map((m, i) => {
-                    const pal = paletteFor(m.id);
+                    const pal = avatarColorsFor(m);
                     const isAgent = m.kind === "agent";
                     const removable = m.id !== currentUserId && !(m.kind === "person" && m.role === "owner");
                     return (
@@ -264,10 +338,46 @@ export function SettingsScreen({
               </>
             )}
 
+            {section === "connectors" && (
+              <>
+                <H>Connectors</H>
+                <Sub>Wire this workspace up to third-party products. Enter each connector's credentials once; agents then connect their own accounts where that applies.</Sub>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 18 }}>
+                  {connectors?.map((connector) => (
+                    <div key={connector.id} style={{ display: "flex", flexDirection: "column" }}>
+                      <ConnectorRow
+                        connector={connector}
+                        active={connector.id === selectedConnectorId}
+                        onClick={() => setSelectedConnectorId(connector.id === selectedConnectorId ? null : connector.id)}
+                      />
+                      {connector.id === selectedConnectorId && (
+                        <div style={{ padding: "10px 10px 16px" }}>
+                          <ConnectorDetailPane
+                            connector={connector}
+                            saving={connectorsSaving}
+                            error={connectorsError}
+                            onSave={onConnectorConfigSave}
+                            onClear={onConnectorConfigClear}
+                            onStartSetup={onStartConnectorSetup}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {connectors?.length === 0 && <div style={{ fontSize: 12.5, color: color.muted }}>No connectors available.</div>}
+                  {!connectors && !connectorsError && <div style={{ fontSize: 12.5, color: color.muted }}>Loading connectors…</div>}
+                  {!connectors && connectorsError && (
+                    <div style={{ fontSize: 12.5, color: color.statusDeclinedFg }}>Couldn't load connectors: {connectorsError}</div>
+                  )}
+                </div>
+              </>
+            )}
+
             {section === "advanced" && (
               <>
                 <H>Advanced</H>
-                <Sub>Run limits, plugin trust, integrations, and the audit trail.</Sub>
+                <Sub>Run limits, plugin trust, and the audit trail.</Sub>
 
                 <FieldLabel style={{ marginTop: 20 }}>Run limits</FieldLabel>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -289,18 +399,6 @@ export function SettingsScreen({
                 </div>
                 <TrustedRegistriesEditor hosts={workspace.trustedPluginRegistries} onChange={onTrustedRegistriesChange} />
 
-                <FieldLabel style={{ marginTop: 22 }}>Google Workspace</FieldLabel>
-                <div style={{ fontSize: 12.5, color: color.muted, marginBottom: 10, lineHeight: 1.55 }}>
-                  The one app-level Google OAuth client agents use to connect Gmail/Calendar. Each agent still connects its own account.
-                </div>
-                <GoogleWorkspaceIntegrationEditor
-                  status={googleWorkspaceStatus}
-                  saving={googleWorkspaceSaving}
-                  error={googleWorkspaceError}
-                  onSave={onGoogleWorkspaceClientSave}
-                  onClear={onGoogleWorkspaceClientClear}
-                />
-
                 <FieldLabel style={{ marginTop: 22 }}>Audit log</FieldLabel>
                 <div style={{ fontSize: 12.5, color: color.muted, lineHeight: 1.55 }}>
                   Every message, run, tool call, and approval decision is written to an append-only, tamper-evident log. Nothing can be edited or deleted after the fact.
@@ -317,6 +415,8 @@ export function SettingsScreen({
               </>
             )}
           </div>
+          </div>
+          )}
         </div>
       </div>
 
@@ -360,7 +460,7 @@ function Sub({ children }: { children: React.ReactNode }) {
   return <div style={{ marginTop: 5, fontSize: 13, color: color.muted, lineHeight: 1.6 }}>{children}</div>;
 }
 function FieldLabel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ fontSize: 12.5, fontWeight: 500, color: "#33333B", marginBottom: 7, ...style }}>{children}</div>;
+  return <div style={{ fontSize: 12.5, fontWeight: 500, color: "#413D4E", marginBottom: 7, ...style }}>{children}</div>;
 }
 
 const inputBox: React.CSSProperties = {
@@ -424,34 +524,42 @@ function TrustedRegistriesEditor({ hosts, onChange }: { hosts: string[]; onChang
   );
 }
 
-function GoogleWorkspaceIntegrationEditor({
-  status,
+/** The config control for one connector — summary (when configured) or credential form. No title
+ * or card chrome: the surrounding pane (`ConnectorDetailPane`) owns the connector's name and
+ * description. Remount it (`key={connector.id}`) when switching connectors so draft state resets. */
+function ConnectorConfigEditor({
+  connector,
   saving,
   error,
   onSave,
   onClear,
 }: {
-  status?: { configured: boolean; clientId?: string };
+  connector: ConnectorRow;
   saving?: boolean;
   error?: string;
-  onSave: (client: { clientId: string; clientSecret: string }) => void;
+  onSave: (values: Record<string, string>) => void;
   onClear: () => void;
 }) {
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState(false);
-  const configured = status?.configured ?? false;
-  const showForm = editing || !configured;
+  const showForm = editing || !connector.configured;
+  const complete = connector.configFields.every((f) => (draft[f.key] ?? "").trim() !== "");
 
   const inputStyle: React.CSSProperties = { width: "100%", height: 32, border: `1px solid ${color.borderStrong}`, borderRadius: 8, padding: "0 10px", font: `400 13px ${font.mono}`, outline: "none", background: color.surface, color: color.ink, boxSizing: "border-box" };
+  const reset = () => { setDraft({}); setEditing(false); };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {!showForm && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12 }}>
-          <span style={{ flex: 1 }}>
-            <span style={{ display: "block", fontSize: 12, fontWeight: 600 }}>Configured</span>
-            <span style={{ display: "block", fontSize: 12, color: color.muted, fontFamily: font.mono }}>{status?.clientId}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {connector.configFields
+              .filter((f) => !f.secret)
+              .map((f) => (
+                <span key={f.key} style={{ display: "block", fontSize: 12, color: color.muted, fontFamily: font.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {connector.publicValues?.[f.key] ?? "—"}
+                </span>
+              ))}
           </span>
           <button onClick={() => setEditing(true)} className="ws-hoverable" style={{ height: 28, padding: "0 12px", background: color.surface, border: `1px solid ${color.borderStrong}`, borderRadius: 8, font: `500 12px ${font.sans}`, color: color.ink, cursor: "pointer" }}>
             Change
@@ -461,33 +569,36 @@ function GoogleWorkspaceIntegrationEditor({
           </button>
         </div>
       )}
+
       {showForm && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {!configured && <span style={{ fontSize: 12, color: color.mutedLight }}>Not configured — agents can't connect Gmail/Calendar yet.</span>}
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Client ID</span>
-            <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="123-abc.apps.googleusercontent.com" style={inputStyle} />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Client secret</span>
-            <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} type="password" placeholder="GOCSPX-…" style={inputStyle} />
-          </label>
+          {!connector.configured && <span style={{ fontSize: 12, color: color.mutedLight }}>Not configured yet.</span>}
+          {connector.configFields.map((f) => (
+            <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{f.label}</span>
+              <input
+                value={draft[f.key] ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                type={f.secret ? "password" : "text"}
+                placeholder={f.placeholder}
+                style={inputStyle}
+              />
+            </label>
+          ))}
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={() => {
-                if (!clientId.trim() || !clientSecret.trim()) return;
-                onSave({ clientId: clientId.trim(), clientSecret: clientSecret.trim() });
-                setClientId("");
-                setClientSecret("");
-                setEditing(false);
+                if (!complete) return;
+                onSave(Object.fromEntries(connector.configFields.map((f) => [f.key, (draft[f.key] ?? "").trim()])));
+                reset();
               }}
-              disabled={saving || !clientId.trim() || !clientSecret.trim()}
-              style={{ height: 32, padding: "0 16px", background: color.accent, border: "none", borderRadius: 8, font: `500 13px ${font.sans}`, color: "#fff", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}
+              disabled={saving || !complete}
+              style={{ height: 32, padding: "0 16px", background: color.accent, border: "none", borderRadius: 8, font: `500 13px ${font.sans}`, color: "#fff", cursor: saving || !complete ? "default" : "pointer", opacity: saving || !complete ? 0.6 : 1 }}
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            {configured && (
-              <button onClick={() => { setEditing(false); setClientId(""); setClientSecret(""); }} className="ws-hoverable" style={{ height: 32, padding: "0 16px", background: color.surface, border: `1px solid ${color.borderStrong}`, borderRadius: 8, font: `500 13px ${font.sans}`, color: color.ink, cursor: "pointer" }}>
+            {connector.configured && (
+              <button onClick={reset} className="ws-hoverable" style={{ height: 32, padding: "0 16px", background: color.surface, border: `1px solid ${color.borderStrong}`, borderRadius: 8, font: `500 13px ${font.sans}`, color: color.ink, cursor: "pointer" }}>
                 Cancel
               </button>
             )}
@@ -496,6 +607,178 @@ function GoogleWorkspaceIntegrationEditor({
       )}
       {error && <div style={{ fontSize: 12, color: color.statusDeclinedFg }}>{error}</div>}
     </div>
+  );
+}
+
+/** One row in the connectors list (left pane / narrow list). */
+function ConnectorRow({ connector, active, onClick }: { connector: ConnectorRow; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="ws-hoverable"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: 2,
+        width: "100%",
+        padding: "9px 10px",
+        borderRadius: 8,
+        border: "none",
+        background: active ? color.accentTint : "transparent",
+        cursor: "pointer",
+        textAlign: "left",
+      }}
+    >
+      <span style={{ fontSize: 13, fontWeight: 600, color: color.ink }}>{connector.name}</span>
+      <span style={{ fontSize: 11, color: connector.configured ? color.muted : color.mutedLight }}>
+        {connector.configured ? "Configured" : "Not configured"}
+      </span>
+    </button>
+  );
+}
+
+/** Right-hand detail pane: the connector's name + description + docs link, then its config control. */
+function ConnectorDetailPane({
+  connector,
+  saving,
+  error,
+  onSave,
+  onClear,
+  onStartSetup,
+}: {
+  connector: ConnectorRow;
+  saving?: boolean;
+  error?: string;
+  onSave: (connectorId: string, values: Record<string, string>) => void;
+  onClear: (connectorId: string) => void;
+  onStartSetup?: (connectorId: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 520 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>{connector.name}</span>
+        {connector.configured && <span style={{ fontSize: 11, color: color.muted }}>· Configured</span>}
+      </div>
+      <div style={{ fontSize: 12.5, color: color.muted, lineHeight: 1.55 }}>
+        {connector.description}
+        {connector.docsUrl && (
+          <>
+            {" "}
+            <a href={connector.docsUrl} target="_blank" rel="noreferrer" style={{ color: color.accent }}>Where to find these</a>
+          </>
+        )}
+      </div>
+      {onStartSetup && connector.hasPerAgentConnect && !connector.configured && (
+        <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Set it up for me</span>
+          <span style={{ fontSize: 12, color: color.muted, lineHeight: 1.5 }}>
+            An agent drives the Google Cloud Console to create the OAuth client — you just sign into
+            Google and watch. Or fill the fields below yourself.
+          </span>
+          <button
+            onClick={() => onStartSetup(connector.id)}
+            style={{ alignSelf: "flex-start", marginTop: 2, height: 30, padding: "0 14px", background: color.accent, border: "none", borderRadius: 8, font: `500 12.5px ${font.sans}`, color: "#fff", cursor: "pointer" }}
+          >
+            Set up automatically
+          </button>
+        </div>
+      )}
+      <ConnectorConfigEditor
+        key={connector.id}
+        connector={connector}
+        saving={saving}
+        error={error}
+        onSave={(values) => onSave(connector.id, values)}
+        onClear={() => onClear(connector.id)}
+      />
+    </div>
+  );
+}
+
+/** Wide-screen connectors view: a list on the left, the selected connector's config on the right. */
+function ConnectorsMasterDetail({
+  connectors,
+  error,
+  saving,
+  activeConnector,
+  onSelect,
+  onSave,
+  onClear,
+  onStartSetup,
+}: {
+  connectors?: ConnectorRow[];
+  error?: string;
+  saving?: boolean;
+  activeConnector?: ConnectorRow;
+  onSelect: (connectorId: string) => void;
+  onSave: (connectorId: string, values: Record<string, string>) => void;
+  onClear: (connectorId: string) => void;
+  onStartSetup?: (connectorId: string) => void;
+}) {
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+      <div className="ws-sb" style={{ width: 232, flex: "none", borderRight: `1px solid ${color.borderLight}`, overflowY: "auto", padding: "16px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.3, textTransform: "uppercase", color: color.mutedLight, padding: "0 10px 6px" }}>Connectors</div>
+        {connectors?.map((c) => (
+          <ConnectorRow key={c.id} connector={c} active={c.id === activeConnector?.id} onClick={() => onSelect(c.id)} />
+        ))}
+        {!connectors && !error && <div style={{ fontSize: 12, color: color.muted, padding: "4px 10px" }}>Loading…</div>}
+        {connectors?.length === 0 && <div style={{ fontSize: 12, color: color.muted, padding: "4px 10px" }}>None available.</div>}
+      </div>
+
+      <div className="ws-sb" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px 30px" }}>
+        {error && !connectors ? (
+          <div style={{ fontSize: 12.5, color: color.statusDeclinedFg }}>Couldn't load connectors: {error}</div>
+        ) : activeConnector ? (
+          <ConnectorDetailPane connector={activeConnector} saving={saving} error={error} onSave={onSave} onClear={onClear} onStartSetup={onStartSetup} />
+        ) : (
+          <div style={{ fontSize: 12.5, color: color.muted }}>Select a connector to configure it.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceNameField({
+  value,
+  saving,
+  error,
+  onCommit,
+}: {
+  value: string;
+  saving?: boolean;
+  error?: string;
+  onCommit: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const commit = () => {
+    const next = draft.trim();
+    if (!next || next === value) {
+      setDraft(value);
+      return;
+    }
+    onCommit(next);
+  };
+  return (
+    <>
+      <input
+        value={draft}
+        maxLength={80}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            setDraft(value);
+            e.currentTarget.blur();
+          }
+        }}
+        style={inputBox}
+      />
+      {saving && <div style={{ fontSize: 12, color: color.muted, marginTop: 6 }}>Saving…</div>}
+      {error && <div style={{ fontSize: 12, color: color.statusDeclinedFg, marginTop: 6 }}>{error}</div>}
+    </>
   );
 }
 

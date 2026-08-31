@@ -28,7 +28,7 @@ const issuerApp = issuer({
       sendCode: async (email, code) => {
         // No email provider wired up for self-hosted deployments yet — the verification code
         // lands in CloudWatch logs instead. Swap this for SES (or similar) before real use.
-        console.log(`[fizz] verification code for ${email}: ${code}`);
+        console.log(`[perch] verification code for ${email}: ${code}`);
       },
       login: async (_req, _form, error) => loginPage(error),
       register: async (_req, state, _form, error) => registerPage(state, error),
@@ -41,9 +41,9 @@ const issuerApp = issuer({
     return ctx.subject("user", { userID: person.id, workspaceID: person.workspaceId });
   },
   // OpenAuth's default `allow` only accepts localhost or same-subdomain redirect URIs — a custom
-  // URL scheme like the desktop app's `fizz://callback` (see apps/desktop/src/lib/auth.ts) is
+  // URL scheme like the desktop app's `perch://callback` (see apps/desktop/src/lib/auth.ts) is
   // neither, so it has to be explicitly allowlisted here.
-  allow: async ({ clientID, redirectURI }) => clientID === "fizz-desktop" && redirectURI === "fizz://callback",
+  allow: async ({ clientID, redirectURI }) => clientID === "perch-desktop" && redirectURI === "perch://callback",
 });
 
 const app = new Hono();

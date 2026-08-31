@@ -3,7 +3,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::store;
 
-const CLIENT_ID: &str = "fizz-desktop";
+const CLIENT_ID: &str = "perch-desktop";
 
 async fn send_once<Req: Serialize + ?Sized>(
     app: &AppHandle,

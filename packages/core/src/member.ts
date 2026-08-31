@@ -13,6 +13,17 @@ export type ToolGrant = z.infer<typeof toolGrant>;
 
 export const triggerKind = z.enum(["mention", "schedule", "webhook", "relevant"]);
 
+/** Where a schedule trigger's run posts its result. `"channel"` targets a named channel;
+ * `"dm"` targets the 1:1 direct channel between `memberId` (the person who set the schedule up)
+ * and the agent — created on demand. Resolved to a concrete channel id in `resolvedChannelId`
+ * by the API whenever the agent is saved (see services/api/src/schedule-support.ts), so the
+ * scheduler and "Run now" paths never have to resolve a DM themselves. */
+export const scheduleTarget = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("channel"), channelId }),
+  z.object({ mode: z.literal("dm"), memberId }),
+]);
+export type ScheduleTarget = z.infer<typeof scheduleTarget>;
+
 export const triggerConfig = z.object({
   kind: triggerKind,
   enabled: z.boolean().default(false),
@@ -24,6 +35,12 @@ export const triggerConfig = z.object({
   label: z.string().optional(),
   /** the standing instruction this trigger runs, distinct from the agent's general `instructions` — schedules only */
   prompt: z.string().optional(),
+  /** schedules only: where the run's result is posted. Absent on legacy rows — treat as
+   * unconfigured and fall back to the agent's first `postsInChannelIds` entry. */
+  target: scheduleTarget.optional(),
+  /** schedules only: the concrete channel id `target` resolves to, filled in by the API on every
+   * agent save. The scheduler Lambda and the "Run now" route post here directly. */
+  resolvedChannelId: channelId.optional(),
 });
 export type TriggerConfig = z.infer<typeof triggerConfig>;
 
@@ -55,6 +72,15 @@ export type SkillDoc = z.infer<typeof skillDoc>;
  */
 export const modelId = z.string().min(1);
 
+/** Per-agent switches for the standard capabilities the platform gives every agent. */
+export const agentUiConfig = z.object({
+  /** Whether this agent may render UI cards in the chat via the `render_ui` tool (A2UI — see
+   * packages/core/src/a2ui.ts). On by default; turn off for agents that should only ever reply in
+   * plain text. Absent on legacy rows — the agent runtime treats absent as enabled. */
+  enabled: z.boolean().default(true),
+});
+export type AgentUiConfig = z.infer<typeof agentUiConfig>;
+
 export const agentConfig = z.object({
   /** free-text instructions — the agent's system prompt */
   instructions: z.string().min(1),
@@ -65,6 +91,7 @@ export const agentConfig = z.object({
   /** hard cap in USD/day; the run loop refuses new steps once spend crosses this */
   dailySpendCapUsd: z.number().positive(),
   postsInChannelIds: z.array(channelId).default([]),
+  ui: agentUiConfig.default({ enabled: true }),
 });
 export type AgentConfig = z.infer<typeof agentConfig>;
 
@@ -98,3 +125,16 @@ export type AgentMember = z.infer<typeof agentMember>;
 
 export const member = z.discriminatedUnion("kind", [person, agentMember]);
 export type Member = z.infer<typeof member>;
+
+/** Best-effort display name from an email address, for when we have to name a Person before they
+ * pick their own: `rob.s.shepherd@x.com` → "Rob S Shepherd". Used by both the sign-in bootstrap
+ * (services/api/src/workspace-bootstrap.ts) and the invite flow. */
+export function displayNameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  return (
+    local
+      .replace(/[._-]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || local
+  );
+}

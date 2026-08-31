@@ -1,77 +1,81 @@
 /**
- * Design tokens for the "Collaborative workspace" redesign (Claude Design project
- * `e2c94291-1adc-421e-95e0-55e3663bf3a5`, file `Workspace.dc.html`). These are the single source
- * of truth for color/type/spacing across every screen — keep them in sync if the design changes.
+ * Design tokens for the **Perch** brand identity (Claude Design project
+ * `e2c94291-1adc-421e-95e0-55e3663bf3a5`, file `Perch Identity.dc.html`). These are the single
+ * source of truth for color/type/spacing across every screen — keep them in sync if the design
+ * changes.
  *
- * The exported shape (names on `color`, `avatarPalette`, `font`, `radius`, `space`,
- * `responsiveBreakpointPx`) is deliberately unchanged from the previous design so nothing
- * downstream needs to be touched just to re-skin — only the values moved.
+ * Palette: Iris (primary), Feather (warmth), Lagoon (motion / live), Slate (text + dark surfaces),
+ * Down (app background). The exported shape (names on `color`, `avatarPalette`, `font`, `radius`,
+ * `space`, `responsiveBreakpointPx`) is deliberately unchanged so nothing downstream needs touching
+ * just to re-skin — only the values moved. `font.display` (Space Grotesk) is the one addition,
+ * opted into by the wordmark and screen headings.
  */
 export const color = {
-  /** Page background behind the floating app card (and the whole surface on mobile). */
-  bg: "#EEEDF2",
-  /** The gradient "frame" the app card floats on — desktop only. */
-  appGradient: "linear-gradient(135deg, #8E7BF5 0%, #5B4BD6 34%, #3E6FB8 62%, #2FA98B 100%)",
+  /** Page background behind the floating app card (and the whole surface on mobile) — "Down". */
+  bg: "#F7F5FA",
+  /** The gradient "frame" the app card floats on — desktop only. Iris → Slate. */
+  appGradient: "linear-gradient(135deg, #9A5CF0 0%, #7D35EB 40%, #5C27BE 70%, #413D4E 100%)",
   /** The app card and every primary panel. */
   surface: "#FFFFFF",
   /** Sidebar / muted fills / table headers. */
-  surfaceMuted: "#FAFAFB",
-  /** Tinted agent message bubble. */
-  tint: "#FAF9FE",
+  surfaceMuted: "#FCFBFD",
+  /** Tinted agent message bubble — faint Iris wash. */
+  tint: "#F6F2FD",
 
-  ink: "#18181B",
-  muted: "#71717A",
-  mutedLight: "#8A8A93",
-  mutedDark: "#52525B",
+  ink: "#413D4E",
+  muted: "#77778A",
+  mutedLight: "#8A8A99",
+  mutedDark: "#4A4A58",
 
-  border: "#EAE8EE",
-  borderLight: "#EFEDF2",
-  borderStrong: "#E2DFEC",
+  border: "#E4E1EC",
+  borderLight: "#EEEBF5",
+  borderStrong: "#D9D3E8",
 
-  accent: "#6D5CE7",
-  accentHover: "#5B4BD6",
+  accent: "#7D35EB",
+  accentHover: "#5C27BE",
   /** Accent text on a light tint (e.g. mention chip, active channel label). */
-  accentText: "#4A3DBF",
-  accentTint: "#EEEBFA",
+  accentText: "#6A31CC",
+  accentTint: "#EFE9FC",
 
-  /** Near-black used by the composer's Send button. */
-  dark: "#17142A",
-  darkHover: "#000000",
+  /** Dark surface used by the composer's Send button — "Slate". */
+  dark: "#413D4E",
+  darkHover: "#2E2A38",
 
-  /** Presence / "live" / success green. */
-  live: "#34C79A",
+  /** Presence / "live" / "in flight" — "Lagoon". */
+  live: "#5DE3D0",
 
-  agentsBadgeBg: "#EEEBFA",
-  agentsBadgeFg: "#4A3DBF",
+  agentsBadgeBg: "#EFE9FC",
+  agentsBadgeFg: "#6A31CC",
   /** The "AGENT" mono chip. */
-  agentTagBg: "#F1EEFC",
-  agentTagFg: "#6152C9",
-  agentTagBorder: "#E2DCF8",
+  agentTagBg: "#EFE9FC",
+  agentTagFg: "#6A31CC",
+  agentTagBorder: "#E2D8F8",
 
-  statusDoneBg: "#EEF8F4",
+  statusDoneBg: "#E9F9F5",
   statusDoneFg: "#2C6F5E",
-  statusOpenBg: "#F5F4F8",
-  statusOpenFg: "#52525B",
-  statusInProgressBg: "#FCF7EC",
+  statusOpenBg: "#F1EFF5",
+  statusOpenFg: "#4A4A58",
+  statusInProgressBg: "#FCF3E9",
   statusInProgressFg: "#8A6420",
-  statusDeclinedBg: "#FCF3F3",
+  statusDeclinedBg: "#FBF1F1",
   statusDeclinedFg: "#8A4340",
 
   approvalBg: "#FCFBFE",
-  approvalBorder: "#E4E0F0",
-  approvalFg: "#4A3DBF",
+  approvalBorder: "#E4E1EC",
+  approvalFg: "#6A31CC",
 
-  /** Avatar palettes — first four are the design's agent (square) colors, then person colors. */
-  avatarIndigoBg: "#6D5CE7",
+  /** Avatar palettes — first four are the design's agent (square) colors, then person colors.
+   *  Drawn from the mark: Iris wing, Lagoon tail, Feather body, Slate beak. */
+  avatarIndigoBg: "#7D35EB",
   avatarIndigoFg: "#FFFFFF",
-  avatarDeepBg: "#0E9F8E",
+  avatarDeepBg: "#2FB6A6",
   avatarDeepFg: "#FFFFFF",
-  avatarInkBg: "#E05252",
+  avatarInkBg: "#413D4E",
   avatarInkFg: "#FFFFFF",
-  avatarGreenBg: "#B4732F",
+  avatarGreenBg: "#D98E52",
   avatarGreenFg: "#FFFFFF",
-  avatarNeutralBg: "#E9A23B",
-  avatarNeutralFg: "rgba(0,0,0,0.6)",
+  avatarNeutralBg: "#F3BE93",
+  avatarNeutralFg: "rgba(0,0,0,0.62)",
 } as const;
 
 export const avatarPalette = [
@@ -83,15 +87,19 @@ export const avatarPalette = [
 
 /** Softer palette for people (round) avatars. */
 export const personPalette = [
-  { bg: "#E9A23B", fg: "rgba(0,0,0,0.6)" },
-  { bg: "#A8C7E8", fg: "rgba(0,0,0,0.55)" },
-  { bg: "#C9B8E8", fg: "rgba(0,0,0,0.55)" },
-  { bg: "#D6D6CD", fg: "#3A3A34" },
+  { bg: "#F3BE93", fg: "rgba(0,0,0,0.62)" },
+  { bg: "#C9BDEB", fg: "rgba(0,0,0,0.55)" },
+  { bg: "#9FE3D8", fg: "rgba(0,0,0,0.55)" },
+  { bg: "#D8D4E2", fg: "#3A3A44" },
 ] as const;
 
 export const font = {
-  sans: "'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif",
-  mono: "'JetBrains Mono', ui-monospace, monospace",
+  /** Display + wordmark — "anything that speaks". */
+  display: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif",
+  /** UI + body — "anything that works". */
+  sans: "'Geist', ui-sans-serif, system-ui, sans-serif",
+  /** ids, spend, logs. */
+  mono: "'Geist Mono', ui-monospace, monospace",
 } as const;
 
 export const radius = {

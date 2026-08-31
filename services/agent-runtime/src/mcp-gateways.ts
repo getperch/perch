@@ -5,7 +5,7 @@ import { SignatureV4 } from "@smithy/signature-v4";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { McpClient } from "@strands-agents/sdk";
-import type { ToolGrant } from "@fizz/core";
+import type { ToolGrant } from "@perch/core";
 
 // `McpClient#listTools()`'s element type (`McpTool`) isn't itself exported from the SDK's package
 // root — only used structurally as a return type — so this derives the same type from the method

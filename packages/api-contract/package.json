@@ -1,5 +1,5 @@
 {
-  "name": "@fizz/api-contract",
+  "name": "@perch/api-contract",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fizz/core": "workspace:*",
+    "@perch/core": "workspace:*",
     "zod": "^4.0.0"
   },
   "devDependencies": {

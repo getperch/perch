@@ -1,6 +1,6 @@
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
-import type { AgentMember, Approval, Citation, Message, Run, RunStep, Workspace } from "@fizz/core";
+import type { A2uiDocument, AgentMember, Approval, Citation, Message, Run, RunStep, Workspace } from "@perch/core";
 import { ddb, TABLE_NAME } from "./db.js";
 import { appendChannelEvent, emit } from "./events.js";
 
@@ -13,9 +13,9 @@ export async function loadAgentConfig(workspaceId: string, agentId: string): Pro
   return res.Item.member;
 }
 
-export async function createRun(input: { workspaceId: string; channelId: string; agentId: string; title: string; triggeredBy: string }): Promise<Run> {
+export async function createRun(input: { workspaceId: string; channelId: string; agentId: string; title: string; triggeredBy: string; runId?: string }): Promise<Run> {
   const run: Run = {
-    id: ulid(),
+    id: input.runId ?? ulid(),
     workspaceId: input.workspaceId,
     channelId: input.channelId,
     agentId: input.agentId,
@@ -130,6 +130,67 @@ export async function postMessage(input: {
   await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${input.channelId}`, sk: `MSG#${message.id}`, message } }));
   await appendChannelEvent(input.channelId, { type: "message.created", channelId: input.channelId, message });
   await emit(input.workspaceId, input.authorId, "message.sent", { messageId: message.id, channelId: input.channelId });
+  return message;
+}
+
+/**
+ * Persists an A2UI card (see `@perch/core`'s `a2ui.ts`) the agent built via the `render_ui` tool,
+ * as its own message in the channel.
+ *
+ * **Replay-safe.** The durable workflow replays a whole reasoning turn on crash (see handler.ts),
+ * so a naive `postMessage` here would double-post the card on every replay. Instead a deterministic
+ * pointer item `RUN#<runId> / A2UI#<renderKey>` (renderKey = the model's `toolUseId`, stable across
+ * replays of the same turn) records which message a given `render_ui` call produced: a repeat call
+ * with the same key updates that message in place rather than creating another.
+ */
+export async function attachA2ui(input: {
+  run: Run;
+  renderKey: string;
+  document: A2uiDocument;
+  /** When set, the card is keyed to `(channel, agent, updateKey)` so it persists and updates in
+   * place across turns and follow-up runs — a living dashboard / a form that becomes a result.
+   * Without it the card is keyed per-run (replay-safe, but a new message each run). */
+  updateKey?: string;
+}): Promise<Message> {
+  const { run, renderKey, document, updateKey } = input;
+  const pointer = updateKey
+    ? { pk: `CHANNEL#${run.channelId}`, sk: `A2UIKEY#${run.agentId}#${updateKey}` }
+    : { pk: `RUN#${run.id}`, sk: `A2UI#${renderKey}` };
+
+  const existingPointer = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: pointer }));
+  const existingMessageId: string | undefined = existingPointer.Item?.messageId;
+
+  if (existingMessageId) {
+    const msgRes = await ddb.send(
+      new GetCommand({ TableName: TABLE_NAME, Key: { pk: `CHANNEL#${run.channelId}`, sk: `MSG#${existingMessageId}` } }),
+    );
+    if (msgRes.Item) {
+      const message: Message = { ...msgRes.Item.message, a2ui: document };
+      await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${run.channelId}`, sk: `MSG#${message.id}`, message } }));
+      await appendChannelEvent(run.channelId, { type: "message.updated", channelId: run.channelId, message });
+      return message;
+    }
+    // Pointer dangling (message deleted) — fall through and post a fresh one.
+  }
+
+  const message = {
+    id: ulid(),
+    workspaceId: run.workspaceId,
+    channelId: run.channelId,
+    authorId: run.agentId,
+    isSystem: false,
+    text: undefined,
+    runId: run.id,
+    tools: [],
+    citations: [],
+    reactions: [],
+    a2ui: document,
+    createdAt: new Date().toISOString(),
+  };
+  await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: `CHANNEL#${run.channelId}`, sk: `MSG#${message.id}`, message } }));
+  await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: { ...pointer, messageId: message.id } }));
+  await appendChannelEvent(run.channelId, { type: "message.created", channelId: run.channelId, message });
+  await emit(run.workspaceId, run.agentId, "message.sent", { messageId: message.id, channelId: run.channelId });
   return message;
 }
 

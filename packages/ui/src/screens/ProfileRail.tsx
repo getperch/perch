@@ -1,11 +1,11 @@
 import { useState } from "react";
-import type { Member, Task } from "@fizz/core";
+import type { Member, Task } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
 import { SegmentedControl } from "../primitives/SegmentedControl.js";
 import { CloseIcon, DotsIcon, SlidersIcon, ThreadsIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor } from "../utils.js";
+import { avatarColorsFor } from "../utils.js";
 
 type Autonomy = "read" | "ask" | "auto";
 
@@ -59,7 +59,7 @@ export function ProfileRail({
 }) {
   const [autonomy, setAutonomy] = useState<Autonomy>("ask");
   const isAgent = member.kind === "agent";
-  const pal = paletteFor(member.id);
+  const pal = avatarColorsFor(member);
   const openTasks = tasks.filter((t) => t.ownerId === member.id && t.status !== "done");
 
   return (
@@ -118,7 +118,7 @@ export function ProfileRail({
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {member.config.tools.map((t) => (
                   <div key={t.toolName} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 8px", margin: "0 -8px", borderRadius: radius.md }}>
-                    <span style={{ font: `400 12.5px ${font.mono}`, color: "#33333B" }}>{t.toolName}</span>
+                    <span style={{ font: `400 12.5px ${font.mono}`, color: "#413D4E" }}>{t.toolName}</span>
                     <span style={{ flex: 1 }} />
                     {t.needsApproval ? (
                       <StatePill bg={color.statusInProgressBg} fg={color.statusInProgressFg}>Ask</StatePill>
@@ -176,7 +176,7 @@ export function ProfileRail({
                 ["Joined", new Date(member.createdAt).toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" })],
                 ["Status", "Active"],
               ].map(([k, v]) => (
-                <div key={k} style={{ display: "flex", alignItems: "center", gap: 11, fontSize: 13, color: "#33333B" }}>
+                <div key={k} style={{ display: "flex", alignItems: "center", gap: 11, fontSize: 13, color: "#413D4E" }}>
                   <span style={{ width: 74, flex: "none", color: color.mutedLight, fontSize: 12.5, textTransform: "capitalize" }}>{k}</span>
                   <span style={{ textTransform: k === "Role" || k === "Status" ? "capitalize" : "none" }}>{v}</span>
                 </div>

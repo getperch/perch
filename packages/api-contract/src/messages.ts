@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { channelId, memberId, message, messageId } from "@fizz/core";
+import { a2uiActionId, channelId, memberId, message, messageId } from "@perch/core";
 
 export const listMessagesInput = z.object({
   channelId,
@@ -30,3 +30,17 @@ export const editMessageOutput = message;
 
 export const deleteMessageInput = z.object({ channelId, messageId });
 export const deleteMessageOutput = message;
+
+/** The viewer clicked an A2UI `Button` on `sourceMessageId`. The server records it as a normal
+ * user message (`[ui-action] …`) and starts a follow-up turn for the agent that posted the card.
+ * `actionId` must match a Button actually declared on that message. */
+export const a2uiActionInput = z.object({
+  channelId,
+  sourceMessageId: messageId,
+  actionId: a2uiActionId,
+  /** echoed back from the clicked Button's `value` prop, if it had one */
+  value: z.string().max(500).optional(),
+  /** field name -> entered value, when the action is a `Form` submit */
+  formData: z.record(z.string(), z.string().max(5000)).optional(),
+});
+export const a2uiActionOutput = message;

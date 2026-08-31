@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
-import type { AgentMember, Channel, Member, Task, TaskSource, TriggerConfig } from "@fizz/core";
+import type { AgentMember, Channel, Member, Task, TaskSource, TriggerConfig } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Pill } from "../primitives/Pill.js";
-import { MenuIcon } from "../icons.js";
+import { MenuIcon, TrashIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { paletteFor } from "../utils.js";
+import { avatarColorsFor } from "../utils.js";
 
 const statusPill: Record<Task["status"], { bg: string; fg: string; label: string }> = {
   open: { bg: color.statusOpenBg, fg: color.statusOpenFg, label: "Open" },
@@ -52,6 +52,9 @@ export function TasksScreen({
   onApproveTask,
   onDenyTask,
   onUpdateAgentTriggers,
+  onRunSchedule,
+  runningSchedule,
+  channels,
   isNarrow,
   onOpenSidebar,
 }: {
@@ -66,6 +69,9 @@ export function TasksScreen({
   onApproveTask: (task: Task) => void;
   onDenyTask: (task: Task) => void;
   onUpdateAgentTriggers: (agentId: string, triggers: TriggerConfig[]) => void;
+  onRunSchedule: (agentId: string, triggerIndex: number) => void;
+  runningSchedule?: { memberId: string; triggerIndex: number };
+  channels: Channel[];
   isNarrow?: boolean;
   onOpenSidebar?: () => void;
 }) {
@@ -76,6 +82,8 @@ export function TasksScreen({
   const [schedCadence, setSchedCadence] = useState("weekday");
   const [schedTime, setSchedTime] = useState("08:00");
   const [schedOwner, setSchedOwner] = useState<string>("");
+  // "dm" = a direct message to whoever set the schedule up; "channel:<id>" = a named channel.
+  const [schedTarget, setSchedTarget] = useState<string>("dm");
 
   const agents = useMemo(() => members.filter((m): m is AgentMember => m.kind === "agent"), [members]);
 
@@ -122,10 +130,14 @@ export function TasksScreen({
     const agent = agents.find((a) => a.id === schedOwner);
     if (!agent) return;
     const cron = cronFor(schedCadence, schedTime);
-    const trigger: TriggerConfig = { kind: "schedule", enabled: true, schedule: cron, label: schedText.trim().slice(0, 60), prompt: schedText.trim() };
+    const target: TriggerConfig["target"] = schedTarget.startsWith("channel:")
+      ? { mode: "channel", channelId: schedTarget.slice("channel:".length) }
+      : { mode: "dm", memberId: currentUserId };
+    const trigger: TriggerConfig = { kind: "schedule", enabled: true, schedule: cron, label: schedText.trim().slice(0, 60), prompt: schedText.trim(), target };
     onUpdateAgentTriggers(agent.id, [...agent.config.triggers, trigger]);
     setComposing(false);
     setSchedText("");
+    setSchedTarget("dm");
   }
 
   function toggleSchedule(row: ScheduleRow) {
@@ -133,14 +145,23 @@ export function TasksScreen({
     onUpdateAgentTriggers(row.agentId, next);
   }
 
+  function deleteSchedule(row: ScheduleRow) {
+    onUpdateAgentTriggers(
+      row.agentId,
+      row.agent.config.triggers.filter((_, i) => i !== row.index),
+    );
+  }
+
   function runScheduleNow(row: ScheduleRow) {
-    onCreateTask({
-      title: row.trigger.label || "Scheduled task",
-      ownerId: row.agentId,
-      source: "schedule",
-      scheduleLabel: cadenceLabel(row.trigger.schedule ?? ""),
-      detail: row.trigger.prompt,
-    });
+    onRunSchedule(row.agentId, row.index);
+  }
+
+  /** Human-readable target for a schedule row: its explicit `target`, else the agent's channel. */
+  function scheduleTargetLabel(row: ScheduleRow): string {
+    const t = row.trigger.target;
+    if (t?.mode === "dm") return "a direct message";
+    const ch = t?.mode === "channel" ? channelsById[t.channelId] : firstChannelOf(row.agent, channelsById);
+    return ch?.name ? `#${ch.name}` : "its channel";
   }
 
   return (
@@ -200,7 +221,7 @@ export function TasksScreen({
                   style={{ height: 36, border: `1px solid ${color.borderStrong}`, borderRadius: radius.lg, padding: "0 12px", font: `400 14px ${font.sans}`, outline: "none" }}
                 />
               </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 500 }}>Repeats</span>
                   <select value={schedCadence} onChange={(e) => setSchedCadence(e.target.value)} style={selectStyle}>
@@ -208,7 +229,7 @@ export function TasksScreen({
                   </select>
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500 }}>At</span>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>At (UTC)</span>
                   <input
                     value={schedTime}
                     onChange={(e) => setSchedTime(e.target.value)}
@@ -216,10 +237,17 @@ export function TasksScreen({
                   />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500 }}>Owner</span>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>Agent</span>
                   <select value={schedOwner} onChange={(e) => setSchedOwner(e.target.value)} style={selectStyle}>
                     <option value="">Choose an agent</option>
                     {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>Post the result to</span>
+                  <select value={schedTarget} onChange={(e) => setSchedTarget(e.target.value)} style={selectStyle}>
+                    <option value="dm">Send me a direct message</option>
+                    {channels.map((ch) => <option key={ch.id} value={`channel:${ch.id}`}>#{ch.name}</option>)}
                   </select>
                 </label>
               </div>
@@ -228,7 +256,7 @@ export function TasksScreen({
 
           <div style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.lg, overflow: "hidden" }}>
             {schedules.map((row) => {
-              const pal = paletteFor(row.agentId);
+              const pal = avatarColorsFor(row.agent);
               return (
                 <div key={`${row.agentId}-${row.index}`} style={{ padding: "16px 20px", borderBottom: `1px solid ${color.border}`, background: row.trigger.enabled ? color.surface : color.surfaceMuted }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
@@ -246,9 +274,7 @@ export function TasksScreen({
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 12, color: color.muted }}>{row.agent.name}</span>
                         <Dot />
-                        <span style={{ fontSize: 12, color: color.muted }}>
-                          Posts to {firstChannelOf(row.agent, channelsById)?.name ? `#${firstChannelOf(row.agent, channelsById)!.name}` : "its channel"}
-                        </span>
+                        <span style={{ fontSize: 12, color: color.muted }}>Posts to {scheduleTargetLabel(row)}</span>
                         <Dot />
                         <span style={{ fontSize: 12, fontWeight: 600, color: row.trigger.enabled ? color.accentText : color.mutedLight }}>
                           {row.trigger.enabled ? "Active" : "Paused"}
@@ -256,8 +282,23 @@ export function TasksScreen({
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
-                      <Button variant="secondary" onClick={() => runScheduleNow(row)}>Run now</Button>
+                      {(() => {
+                        const isRunning = runningSchedule?.memberId === row.agentId && runningSchedule?.triggerIndex === row.index;
+                        return (
+                          <Button variant="secondary" disabled={isRunning} onClick={() => runScheduleNow(row)}>
+                            {isRunning ? "Starting…" : "Run now"}
+                          </Button>
+                        );
+                      })()}
                       <Switch on={row.trigger.enabled} onClick={() => toggleSchedule(row)} />
+                      <button
+                        onClick={() => deleteSchedule(row)}
+                        className="ws-hoverable"
+                        aria-label="Delete schedule"
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, border: "none", background: "none", borderRadius: radius.md, cursor: "pointer", color: color.mutedLight }}
+                      >
+                        <TrashIcon />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -267,9 +308,9 @@ export function TasksScreen({
           </div>
 
           <div style={{ fontSize: 12, color: color.muted, lineHeight: 1.6 }}>
-            A schedule is a standing instruction on an agent's triggers. Every time it fires, its
-            owner opens a real task here — so a recurring item and a one-off both end up in the
-            same list.
+            A schedule is a standing instruction on an agent. Every time it fires — on its cadence,
+            or when you hit Run now — that agent runs the instruction with its own tools and posts
+            the result where you chose.
           </div>
         </div>
       ) : (
@@ -288,7 +329,7 @@ export function TasksScreen({
             {filtered.map((t) => {
               const owner = membersById[t.ownerId];
               const openedBy = t.openedById ? membersById[t.openedById] : undefined;
-              const pal = owner ? paletteFor(owner.id) : paletteFor("?");
+              const pal = avatarColorsFor(owner);
               const st = statusPill[t.status];
               const done = t.status === "done";
               return (

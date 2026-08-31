@@ -63,3 +63,12 @@ pub async fn messages_delete(
 ) -> Result<DeleteChannelsChannelIdMessagesMessageIdResponse, String> {
     call(&app, Method::DELETE, &format!("/channels/{channel_id}/messages/{message_id}"), None::<&()>).await
 }
+
+#[tauri::command]
+pub async fn messages_a2ui_action(
+    app: AppHandle,
+    channel_id: String,
+    input: PostChannelsChannelIdA2uiActionsRequest,
+) -> Result<PostChannelsChannelIdA2uiActionsResponse, String> {
+    call(&app, Method::POST, &format!("/channels/{channel_id}/a2ui-actions"), Some(&input)).await
+}

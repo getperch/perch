@@ -49,8 +49,11 @@ export function AppShell({
   return (
     <div
       style={{
-        height: "100vh",
-        minHeight: "100vh",
+        // `100%` (not `100vh`) so a host that renders its own chrome above the shell — e.g. the
+        // desktop app's custom Titlebar — gets a shell that fills the *remaining* height rather
+        // than overflowing the viewport. `#root`/body/html are `height:100%` (global.css).
+        height: "100%",
+        minHeight: "100%",
         display: "flex",
         flexDirection: "column",
         background: isNarrow ? color.surface : color.bg,

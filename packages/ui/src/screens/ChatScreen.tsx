@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import EmojiPicker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
-import type { ArtifactRef, Channel, Member, Message } from "@fizz/core";
+import type { ArtifactRef, Channel, Member, Message } from "@perch/core";
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { AgentBadge } from "../primitives/AgentBadge.js";
@@ -10,6 +10,7 @@ import { CodeBlock } from "../primitives/CodeBlock.js";
 import { Dialog } from "../primitives/Dialog.js";
 import { ConfirmDialog } from "../primitives/ConfirmDialog.js";
 import { Spinner } from "../primitives/Spinner.js";
+import { A2uiBlock } from "../a2ui/A2uiBlock.js";
 import { useResizable } from "../hooks/useResizable.js";
 import {
   AlertIcon,
@@ -31,7 +32,7 @@ import {
   TrashIcon,
 } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
-import { mentionTokenFor, monoFor, paletteFor, relativeTime } from "../utils.js";
+import { avatarColorsFor, mentionTokenFor, monoFor, relativeTime } from "../utils.js";
 
 export function ChatScreen({
   channel,
@@ -65,6 +66,7 @@ export function ChatScreen({
   onDeleteMessage,
   onRetryMessage,
   onDismissMessage,
+  onA2uiAction,
   currentUserId,
   openArtifact,
   artifactContent,
@@ -110,6 +112,8 @@ export function ChatScreen({
   onDeleteMessage: (messageId: string) => void;
   onRetryMessage: (messageId: string, text: string) => void;
   onDismissMessage: (messageId: string) => void;
+  /** The viewer clicked a button on an agent's A2UI card — omit to render such buttons inert. */
+  onA2uiAction?: (sourceMessageId: string, actionId: string, opts?: { value?: string; formData?: Record<string, string> }) => void;
   currentUserId: string;
   openArtifact?: ArtifactRef;
   artifactContent?: string;
@@ -210,7 +214,7 @@ export function ChatScreen({
               >
                 <span style={{ display: "flex" }}>
                   {memberStack.map((m, i) => {
-                    const pal = paletteFor(m.id);
+                    const pal = avatarColorsFor(m);
                     return (
                       <span key={m.id} style={{ marginLeft: i ? -7 : 0, borderRadius: radius.pill, border: `1.5px solid ${color.surface}` }}>
                         <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={20} square={m.kind === "agent"} />
@@ -292,7 +296,7 @@ export function ChatScreen({
             <div style={{ padding: 16, fontSize: 13, color: color.mutedLight }}>No one's in this channel yet.</div>
           )}
           {channelMembers.map((m) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             const canRemove = onRemoveMember && m.id !== currentUserId;
             return (
               <div key={m.id} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: radius.md }}>
@@ -333,7 +337,7 @@ export function ChatScreen({
                 Not in this channel
               </div>
               {addableMembers.map((m) => {
-                const pal = paletteFor(m.id);
+                const pal = avatarColorsFor(m);
                 return (
                   <div key={m.id} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: radius.md }}>
                     <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={26} square={m.kind === "agent"} />
@@ -454,6 +458,7 @@ export function ChatScreen({
                     onRetryMessage={onRetryMessage}
                     onDismissMessage={onDismissMessage}
                     onOpenArtifact={onOpenArtifact}
+                    onA2uiAction={onA2uiAction}
                     isOwn={m.authorId === currentUserId}
                     isGroupStart={groupFlags[i]!.isGroupStart}
                     isGroupEnd={groupFlags[i]!.isGroupEnd}
@@ -626,6 +631,7 @@ function MessageRow({
   onRetryMessage,
   onDismissMessage,
   onOpenArtifact,
+  onA2uiAction,
   isOwn,
   isGroupStart,
   isGroupEnd,
@@ -644,6 +650,7 @@ function MessageRow({
   onRetryMessage: (messageId: string, text: string) => void;
   onDismissMessage: (messageId: string) => void;
   onOpenArtifact: (artifact: ArtifactRef) => void;
+  onA2uiAction?: (sourceMessageId: string, actionId: string, opts?: { value?: string; formData?: Record<string, string> }) => void;
   isOwn: boolean;
   isGroupStart: boolean;
   isGroupEnd: boolean;
@@ -674,7 +681,7 @@ function MessageRow({
     );
   }
 
-  const pal = author ? paletteFor(author.id) : paletteFor("unknown");
+  const pal = avatarColorsFor(author, "unknown");
   const isAgent = author?.kind === "agent";
   const isPending = m.id.startsWith("optimistic-");
   const isFailed = m.id.startsWith("failed-");
@@ -690,11 +697,19 @@ function MessageRow({
     if (text && text !== m.text) onEditMessage(m.id, text);
   }
 
-  const body = m.text
-    ? isAgent
-      ? <Markdown>{m.text}</Markdown>
-      : <div style={{ fontSize: 14, lineHeight: 1.55, color: color.ink, whiteSpace: "pre-wrap" }}>{renderMessageText(m.text, channelMembers)}</div>
-    : null;
+  const body = m.a2uiAction
+    ? (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: color.muted, background: color.surfaceMuted, border: `1px solid ${color.border}`, borderRadius: radius.pill, padding: "3px 10px" }}>
+          <span aria-hidden>⚡</span>
+          {m.a2uiAction.label}
+          {m.a2uiAction.value ? <span style={{ color: color.mutedLight }}>· {m.a2uiAction.value}</span> : null}
+        </div>
+      )
+    : m.text
+      ? isAgent
+        ? <Markdown>{m.text}</Markdown>
+        : <div style={{ fontSize: 14, lineHeight: 1.55, color: color.ink, whiteSpace: "pre-wrap" }}>{renderMessageText(m.text, channelMembers)}</div>
+      : null;
 
   return (
     <div
@@ -776,6 +791,13 @@ function MessageRow({
         )}
 
         {m.tools.length > 0 && <AutonomousRunCard tools={m.tools} />}
+
+        {m.a2ui && (
+          <A2uiBlock
+            doc={m.a2ui}
+            onAction={onA2uiAction ? (a) => onA2uiAction(m.id, a.actionId, { value: a.value, formData: a.formData }) : undefined}
+          />
+        )}
 
         {m.artifact && (
           <button onClick={() => onOpenArtifact(m.artifact!)} className="ws-hoverable" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 12, width: "100%", border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12, background: color.surface, cursor: "pointer", textAlign: "left" }}>
@@ -1074,7 +1096,7 @@ function Composer({
       {mention && candidates.length > 0 && (
         <div className="ws-sb" style={{ position: "absolute", bottom: "100%", left: 26, marginBottom: 6, width: 260, maxHeight: 220, overflowY: "auto", background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.lg, boxShadow: "0 8px 24px #00000026", padding: 4, zIndex: 10 }}>
           {candidates.map((m, i) => {
-            const pal = paletteFor(m.id);
+            const pal = avatarColorsFor(m);
             return (
               <button key={m.id} onMouseDown={(e) => { e.preventDefault(); insertMention(m); }} className="ws-hoverable" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", height: 32, padding: "0 8px", borderRadius: radius.md, background: i === mention.index ? color.surfaceMuted : "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
                 <Avatar mono={m.mono} bg={pal.bg} fg={pal.fg} size={20} square={m.kind === "agent"} />

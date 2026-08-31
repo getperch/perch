@@ -4,25 +4,54 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import type { mentions as mentionsContract } from "@fizz/api-contract";
+import type { mentions as mentionsContract } from "@perch/api-contract";
 
 type Mention = mentionsContract.Mention;
 
+const SEEN_KEY = "perch.mentionNotifications.seen";
+const SEEN_CAP = 300;
+
+/** messageIds we've already notified about, persisted so a restart doesn't either (a) re-notify
+ * for the same mention or (b) silently swallow a mention that landed while the app was closed —
+ * the old in-memory-only seed did the latter, which is why a scheduled run finishing while you
+ * weren't looking never produced a notification. */
+function loadSeen(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeen(seen: Set<string>): void {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-SEEN_CAP)));
+  } catch {
+    /* private mode / quota — notifications just fall back to in-memory de-dup for this session */
+  }
+}
+
 /**
- * Fires a native OS notification (via the Tauri notification plugin) the first time we see a new
- * @mention of the current user in the cross-channel mentions feed. The feed is derived server-side
- * from message text (see services/api/src/routers/mentions.ts) and already excludes the user's own
- * messages, so "an agent tagged you" and "a teammate tagged you" both land here.
+ * Fires a native OS notification (via the Tauri notification plugin) for each new @mention of the
+ * current user in the cross-channel mentions feed. The feed is derived server-side from message
+ * text (see services/api/src/routers/mentions.ts) and already excludes your own messages, so "an
+ * agent tagged you" (e.g. a scheduled run posting its result) and "a teammate tagged you" both
+ * land here.
  *
- * The first successful load only *seeds* the seen-set — we don't replay the existing backlog as a
- * burst of notifications on launch. After that, any mention id we haven't seen and that's flagged
- * `unread` (posted in the last 24h) gets a single notification.
+ * The seen-set is persisted (localStorage), so:
+ *  - a mention that arrived while the app was closed still notifies on next launch (if still
+ *    `unread`, i.e. < 24h old) — it's not in the persisted set;
+ *  - a restart doesn't replay mentions already notified.
+ * On a genuinely fresh install (no persisted set) the first load seeds silently rather than
+ * blasting a day of backlog.
  *
- * Desktop notification clicks don't reliably surface a JS callback across platforms, so clicking
- * one doesn't deep-link; the in-app Notifications screen is the place to click through.
+ * Only fires while the app process is running. There's no server push, so a fully-closed app —
+ * desktop or mobile — won't notify until it's next opened and polls.
  */
 export function useMentionNotifications(mentions: Mention[] | undefined) {
   const seen = useRef<Set<string> | null>(null);
+  const seededSilently = useRef(false);
   const permission = useRef<"unknown" | "granted" | "denied">("unknown");
 
   useEffect(() => {
@@ -42,14 +71,21 @@ export function useMentionNotifications(mentions: Mention[] | undefined) {
   useEffect(() => {
     if (!mentions) return;
 
-    // First load: remember everything, notify for nothing.
     if (seen.current === null) {
-      seen.current = new Set(mentions.map((m) => m.messageId));
-      return;
+      seen.current = loadSeen();
+      // Fresh install: nothing remembered yet — seed from the current feed without notifying so
+      // we don't replay up to 24h of existing mentions on first ever launch.
+      if (seen.current.size === 0) {
+        seen.current = new Set(mentions.map((m) => m.messageId));
+        seededSilently.current = true;
+        saveSeen(seen.current);
+        return;
+      }
     }
 
     const fresh = mentions.filter((m) => m.unread && !seen.current!.has(m.messageId));
     for (const m of mentions) seen.current.add(m.messageId);
+    saveSeen(seen.current);
     if (fresh.length === 0 || permission.current !== "granted") return;
 
     if (fresh.length === 1) {

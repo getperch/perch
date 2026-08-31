@@ -1,6 +1,8 @@
 packages:
   - "apps/*"
+  - "apps/desktop/sidecar"
   - "packages/*"
   - "services/*"
   - "services/tools/*"
   - "infra"
+  - "docs"

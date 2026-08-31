@@ -1,5 +1,5 @@
 {
-  "name": "@fizz/tool-http-fetch",
+  "name": "@perch/tool-http-fetch",
   "private": true,
   "version": "0.1.0",
   "type": "module",

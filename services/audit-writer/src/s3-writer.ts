@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import type { AuditEvent, AuditRecord } from "@fizz/core";
+import type { AuditEvent, AuditRecord } from "@perch/core";
 
 const s3 = new S3Client({});
 const AUDIT_BUCKET_NAME = process.env.AUDIT_BUCKET_NAME ?? "";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { approvalPolicy, memberId, workspace, workspaceId } from "@fizz/core";
+import { approvalPolicy, memberId, modelId, workspace, workspaceId } from "@perch/core";
 
 export const getWorkspaceInput = z.object({ workspaceId });
 export const getWorkspaceOutput = workspace;
@@ -22,12 +22,15 @@ export const getSpendOutput = z.object({
   ),
 });
 
-/** Backs the Settings screen's Approvals + Limits cards. */
+/** Backs the Settings screen's General + Approvals + Limits cards. */
 export const updateSettingsInput = z.object({
   workspaceId,
+  name: z.string().trim().min(1).max(80).optional(),
   approvalPolicy: approvalPolicy.optional(),
   maxStepsPerRun: z.number().int().positive().optional(),
   maxConcurrentRuns: z.number().int().positive().optional(),
   trustedPluginRegistries: z.array(z.string()).optional(),
+  /** Empty string clears it back to "no default"; any other value must be a real Bedrock model id. */
+  defaultModel: z.union([modelId, z.literal("")]).optional(),
 });
 export const updateSettingsOutput = workspace;

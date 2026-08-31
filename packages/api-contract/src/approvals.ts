@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { approval, approvalId } from "@fizz/core";
+import { approval, approvalId } from "@perch/core";
 
 export const resolveApprovalInput = z.object({
   approvalId,
