@@ -1,5 +1,6 @@
 /// <reference path="../.sst/platform/config.d.ts" />
 import { makeGateway, toolsProvider } from "./gateway.js";
+import { makeRoutineScheduling } from "./schedule.js";
 
 export function makeApi(args: {
   table: sst.aws.Dynamo;
@@ -31,6 +32,9 @@ export function makeApi(args: {
   // connectorId are wildcarded — only known at request time.
   const connectorAgentTokenSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/agents/*/connectors/*/token`;
   const connectorClientSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/connectors/*/client`;
+  // Per-routine secret values (see services/api/src/procedures-support.ts's `procedureSecretSsmPath`).
+  // workspaceId/procedureId/key are only known at request time, so wildcarded; scoped by stage.
+  const procedureSecretSsmArnPattern = $interpolate`arn:aws:ssm:${region}:${accountId}:parameter/perch/${$app.stage}/*/procedure/*`;
 
   // -- Per-agent isolation of the connector token read ------------------------------------------
   //
@@ -220,8 +224,21 @@ export function makeApi(args: {
       // the Gateway URL itself.
       TOOL_GATEWAY_URL: gateway.gatewayUrl,
       AGENT_MEMORY_BUCKET_NAME: agentMemoryBucket.name,
+      // Routine replay (services/agent-runtime/src/procedure.ts) drives the same AgentCore browser
+      // resource directly over CDP, and resolves `secret:` step values from SSM.
+      AGENTCORE_BROWSER_ID: browser.browserId,
+      HOME_REGION: region,
+      STAGE: $app.stage,
     },
+    // playwright-core's `require("chromium-bidi/...")` — same bundling workaround as ToolBrowser
+    // (replay only uses `chromium.connectOverCDP`, never BiDi).
+    nodejs: { esbuild: { external: ["chromium-bidi"] } },
     permissions: [
+      {
+        actions: ["bedrock-agentcore:StartBrowserSession", "bedrock-agentcore:StopBrowserSession", "bedrock-agentcore:GetBrowserSession", "bedrock-agentcore:ConnectBrowserAutomationStream"],
+        resources: ["*"],
+      },
+      { actions: ["ssm:GetParameter"], resources: [procedureSecretSsmArnPattern] },
       // These two grants used to sit on the now-deleted services/tools/gateway-caller and
       // services/tools/web-search shim Lambdas — moved onto agentRuntime directly since it's now
       // the one making the MCP calls (see services/agent-runtime/src/mcp-gateways.ts).
@@ -257,6 +274,8 @@ export function makeApi(args: {
     ],
   });
 
+  const routineScheduling = makeRoutineScheduling({ table, bus, agentRuntime });
+
   const api = new sst.aws.Function("ApiFunction", {
     handler: "services/api/src/handler.handler",
     // Linking a Workflow grants the invoke + durable-callback permissions services/api needs to
@@ -271,15 +290,28 @@ export function makeApi(args: {
       // services/api/src/okf-store.ts and services/api/src/routers/knowledge.ts).
       AGENT_MEMORY_BUCKET_NAME: agentMemoryBucket.name,
       STAGE: $app.stage,
+      HOME_REGION: region,
+      // Routines: start/stop the recording browser session, async-invoke the recorder, and
+      // create/update/delete one EventBridge Scheduler schedule per scheduled routine.
+      ROUTINE_SCHEDULE_GROUP: routineScheduling.scheduleGroupName,
+      ROUTINE_SCHEDULER_FUNCTION_ARN: routineScheduling.procedureSchedulerArn,
+      ROUTINE_SCHEDULER_ROLE_ARN: routineScheduling.schedulerRoleArn,
     },
     // Scoped to exactly the per-workspace connector client config path and the per-agent connector
     // token path (see services/api/src/connector-config.ts + google-oauth.ts) — this function can
     // create/read/delete only those two parameter families, not arbitrary SSM parameters.
     permissions: [
-      { actions: ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter"], resources: [connectorAgentTokenSsmArnPattern, connectorClientSsmArnPattern] },
+      { actions: ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter"], resources: [connectorAgentTokenSsmArnPattern, connectorClientSsmArnPattern, procedureSecretSsmArnPattern] },
       // `GET /models` lists the account's on-demand Bedrock models (services/api/src/routers/models.ts).
       // ListFoundationModels has no resource-level scoping, so it's `*`.
       { actions: ["bedrock:ListFoundationModels"], resources: ["*"] },
+      // Routines scheduling: one EventBridge Scheduler schedule per scheduled routine, in the
+      // dedicated group, plus passing the target-invoke role to Scheduler.
+      {
+        actions: ["scheduler:CreateSchedule", "scheduler:UpdateSchedule", "scheduler:DeleteSchedule", "scheduler:GetSchedule"],
+        resources: [$interpolate`arn:aws:scheduler:${region}:${accountId}:schedule/perch-${$app.stage}-routines/*`],
+      },
+      { actions: ["iam:PassRole"], resources: [routineScheduling.schedulerRoleArn] },
     ],
   });
 

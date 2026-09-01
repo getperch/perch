@@ -34,6 +34,10 @@ export const auditEventType = z.enum([
   "knowledge.updated",
   "knowledge.deprecated",
   "knowledge.verified",
+  "procedure.created",
+  "procedure.updated",
+  "procedure.deleted",
+  "procedure.run",
 ]);
 export type AuditEventType = z.infer<typeof auditEventType>;
 

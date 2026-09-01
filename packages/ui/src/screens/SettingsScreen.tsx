@@ -47,6 +47,7 @@ export function SettingsScreen({
   onTrustedRegistriesChange,
   onConnectorConfigSave,
   onConnectorConfigClear,
+  onStartConnectorSetup,
   onAddPeople,
   onOpenMember,
   onConfigureAgent,
@@ -78,6 +79,8 @@ export function SettingsScreen({
   onTrustedRegistriesChange: (hosts: string[]) => void;
   onConnectorConfigSave: (connectorId: string, values: Record<string, string>) => void;
   onConnectorConfigClear: (connectorId: string) => void;
+  /** Google Workspace only: kick off the agent-assisted Cloud Console setup flow. */
+  onStartConnectorSetup?: (connectorId: string) => void;
   onAddPeople: () => void;
   onOpenMember: (memberId: string) => void;
   onConfigureAgent: (memberId: string) => void;
@@ -156,6 +159,7 @@ export function SettingsScreen({
               onSelect={setSelectedConnectorId}
               onSave={onConnectorConfigSave}
               onClear={onConnectorConfigClear}
+              onStartSetup={onStartConnectorSetup}
             />
           ) : (
           <div className="ws-sb" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 0 30px" }}>
@@ -340,6 +344,7 @@ export function SettingsScreen({
                             error={connectorsError}
                             onSave={onConnectorConfigSave}
                             onClear={onConnectorConfigClear}
+                            onStartSetup={onStartConnectorSetup}
                           />
                         </div>
                       )}
@@ -625,12 +630,14 @@ function ConnectorDetailPane({
   error,
   onSave,
   onClear,
+  onStartSetup,
 }: {
   connector: ConnectorRow;
   saving?: boolean;
   error?: string;
   onSave: (connectorId: string, values: Record<string, string>) => void;
   onClear: (connectorId: string) => void;
+  onStartSetup?: (connectorId: string) => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 520 }}>
@@ -647,6 +654,21 @@ function ConnectorDetailPane({
           </>
         )}
       </div>
+      {onStartSetup && connector.hasPerAgentConnect && !connector.configured && (
+        <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Set it up for me</span>
+          <span style={{ fontSize: 12, color: color.muted, lineHeight: 1.5 }}>
+            An agent drives the Google Cloud Console to create the OAuth client — you just sign into
+            Google and watch. Or fill the fields below yourself.
+          </span>
+          <button
+            onClick={() => onStartSetup(connector.id)}
+            style={{ alignSelf: "flex-start", marginTop: 2, height: 30, padding: "0 14px", background: color.accent, border: "none", borderRadius: 8, font: `500 12.5px ${font.sans}`, color: "#fff", cursor: "pointer" }}
+          >
+            Set up automatically
+          </button>
+        </div>
+      )}
       <ConnectorConfigEditor
         key={connector.id}
         connector={connector}
@@ -668,6 +690,7 @@ function ConnectorsMasterDetail({
   onSelect,
   onSave,
   onClear,
+  onStartSetup,
 }: {
   connectors?: ConnectorRow[];
   error?: string;
@@ -676,6 +699,7 @@ function ConnectorsMasterDetail({
   onSelect: (connectorId: string) => void;
   onSave: (connectorId: string, values: Record<string, string>) => void;
   onClear: (connectorId: string) => void;
+  onStartSetup?: (connectorId: string) => void;
 }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
@@ -692,7 +716,7 @@ function ConnectorsMasterDetail({
         {error && !connectors ? (
           <div style={{ fontSize: 12.5, color: color.statusDeclinedFg }}>Couldn't load connectors: {error}</div>
         ) : activeConnector ? (
-          <ConnectorDetailPane connector={activeConnector} saving={saving} error={error} onSave={onSave} onClear={onClear} />
+          <ConnectorDetailPane connector={activeConnector} saving={saving} error={error} onSave={onSave} onClear={onClear} onStartSetup={onStartSetup} />
         ) : (
           <div style={{ fontSize: 12.5, color: color.muted }}>Select a connector to configure it.</div>
         )}

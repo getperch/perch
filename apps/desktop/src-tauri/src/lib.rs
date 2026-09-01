@@ -3,6 +3,7 @@ use std::time::Duration;
 mod api;
 mod auth;
 mod google_workspace;
+mod sidecar;
 mod store;
 mod stream;
 
@@ -26,10 +27,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(http_client)
         .manage(auth::PendingVerifier::default())
         .manage(google_workspace::PendingGoogleVerifier::default())
         .manage(stream::Subscriptions::default())
+        .manage(sidecar::RecordingChild::default())
         .invoke_handler(tauri::generate_handler![
             auth::begin_sign_in,
             auth::complete_sign_in,
@@ -40,6 +43,10 @@ pub fn run() {
             api::connectors::connector_list,
             api::connectors::connector_save_config,
             api::connectors::connector_clear_config,
+            sidecar::list_browsers,
+            sidecar::procedure_replay_local,
+            sidecar::procedure_record_local,
+            sidecar::procedure_record_stop,
             api::channels::channels_list,
             api::channels::channels_get,
             api::channels::channels_create,
@@ -81,6 +88,14 @@ pub fn run() {
             api::knowledge::knowledge_deprecate,
             api::knowledge::knowledge_verify,
             api::knowledge::knowledge_reindex,
+            api::procedures::procedures_list,
+            api::procedures::procedures_get,
+            api::procedures::procedures_create,
+            api::procedures::procedures_update,
+            api::procedures::procedures_delete,
+            api::procedures::procedures_secret_put,
+            api::procedures::procedures_secret_delete,
+            api::procedures::procedures_run,
             stream::subscribe_channel_events,
             stream::unsubscribe_channel_events,
         ])

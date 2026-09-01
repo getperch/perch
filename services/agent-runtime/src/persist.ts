@@ -13,9 +13,9 @@ export async function loadAgentConfig(workspaceId: string, agentId: string): Pro
   return res.Item.member;
 }
 
-export async function createRun(input: { workspaceId: string; channelId: string; agentId: string; title: string; triggeredBy: string }): Promise<Run> {
+export async function createRun(input: { workspaceId: string; channelId: string; agentId: string; title: string; triggeredBy: string; runId?: string }): Promise<Run> {
   const run: Run = {
-    id: ulid(),
+    id: input.runId ?? ulid(),
     workspaceId: input.workspaceId,
     channelId: input.channelId,
     agentId: input.agentId,

@@ -11,6 +11,7 @@ pub mod mentions;
 pub mod messages;
 pub mod models;
 pub mod plugins;
+pub mod procedures;
 pub mod runs;
 pub mod tasks;
 pub mod workspace;

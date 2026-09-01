@@ -5741,6 +5741,1141 @@
         }
       }
     },
+    "/procedures": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "workspaceId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "ownerId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "agentId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "channelId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "startUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "steps": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "goto",
+                                "click",
+                                "fill",
+                                "select",
+                                "waitFor",
+                                "extract",
+                                "assert",
+                                "humanCheckpoint"
+                              ]
+                            },
+                            "selectors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "default": []
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "value": {
+                              "type": "string"
+                            },
+                            "valueRef": {
+                              "type": "string",
+                              "pattern": "^secret:[A-Za-z0-9_.-]+$"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "extractKey": {
+                              "type": "string"
+                            },
+                            "pattern": {
+                              "type": "string"
+                            },
+                            "optional": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind"
+                          ]
+                        },
+                        "default": []
+                      },
+                      "secretKeys": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "default": []
+                      },
+                      "schedule": {
+                        "type": "object",
+                        "properties": {
+                          "cron": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "timezone": {
+                            "type": "string",
+                            "minLength": 1,
+                            "default": "UTC"
+                          },
+                          "channelId": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "cron",
+                          "channelId"
+                        ]
+                      },
+                      "lastRun": {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "completed",
+                              "failed"
+                            ]
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "runId",
+                          "status",
+                          "at"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "workspaceId",
+                      "name",
+                      "ownerId",
+                      "agentId",
+                      "startUrl",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "channelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "startUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "goto",
+                            "click",
+                            "fill",
+                            "select",
+                            "waitFor",
+                            "extract",
+                            "assert",
+                            "humanCheckpoint"
+                          ]
+                        },
+                        "selectors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "default": []
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "valueRef": {
+                          "type": "string",
+                          "pattern": "^secret:[A-Za-z0-9_.-]+$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "extractKey": {
+                          "type": "string"
+                        },
+                        "pattern": {
+                          "type": "string"
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind"
+                      ]
+                    },
+                    "default": []
+                  },
+                  "schedule": {
+                    "type": "object",
+                    "properties": {
+                      "cron": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "timezone": {
+                        "type": "string",
+                        "minLength": 1,
+                        "default": "UTC"
+                      },
+                      "channelId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "channelId"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "agentId",
+                  "startUrl"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "ownerId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "channelId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "startUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "goto",
+                              "click",
+                              "fill",
+                              "select",
+                              "waitFor",
+                              "extract",
+                              "assert",
+                              "humanCheckpoint"
+                            ]
+                          },
+                          "selectors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "valueRef": {
+                            "type": "string",
+                            "pattern": "^secret:[A-Za-z0-9_.-]+$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "extractKey": {
+                            "type": "string"
+                          },
+                          "pattern": {
+                            "type": "string"
+                          },
+                          "optional": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind"
+                        ]
+                      },
+                      "default": []
+                    },
+                    "secretKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": []
+                    },
+                    "schedule": {
+                      "type": "object",
+                      "properties": {
+                        "cron": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "default": "UTC"
+                        },
+                        "channelId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "cron",
+                        "channelId"
+                      ]
+                    },
+                    "lastRun": {
+                      "type": "object",
+                      "properties": {
+                        "runId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "completed",
+                            "failed"
+                          ]
+                        },
+                        "at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "runId",
+                        "status",
+                        "at"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "name",
+                    "ownerId",
+                    "agentId",
+                    "startUrl",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/procedures/{procedureId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "procedureId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "ownerId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "channelId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "startUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "goto",
+                              "click",
+                              "fill",
+                              "select",
+                              "waitFor",
+                              "extract",
+                              "assert",
+                              "humanCheckpoint"
+                            ]
+                          },
+                          "selectors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "valueRef": {
+                            "type": "string",
+                            "pattern": "^secret:[A-Za-z0-9_.-]+$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "extractKey": {
+                            "type": "string"
+                          },
+                          "pattern": {
+                            "type": "string"
+                          },
+                          "optional": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind"
+                        ]
+                      },
+                      "default": []
+                    },
+                    "secretKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": []
+                    },
+                    "schedule": {
+                      "type": "object",
+                      "properties": {
+                        "cron": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "default": "UTC"
+                        },
+                        "channelId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "cron",
+                        "channelId"
+                      ]
+                    },
+                    "lastRun": {
+                      "type": "object",
+                      "properties": {
+                        "runId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "completed",
+                            "failed"
+                          ]
+                        },
+                        "at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "runId",
+                        "status",
+                        "at"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "name",
+                    "ownerId",
+                    "agentId",
+                    "startUrl",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "procedureId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "channelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "goto",
+                            "click",
+                            "fill",
+                            "select",
+                            "waitFor",
+                            "extract",
+                            "assert",
+                            "humanCheckpoint"
+                          ]
+                        },
+                        "selectors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "default": []
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "valueRef": {
+                          "type": "string",
+                          "pattern": "^secret:[A-Za-z0-9_.-]+$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "extractKey": {
+                          "type": "string"
+                        },
+                        "pattern": {
+                          "type": "string"
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind"
+                      ]
+                    }
+                  },
+                  "schedule": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "cron": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "timezone": {
+                        "type": "string",
+                        "minLength": 1,
+                        "default": "UTC"
+                      },
+                      "channelId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "channelId"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "ownerId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "channelId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "startUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "goto",
+                              "click",
+                              "fill",
+                              "select",
+                              "waitFor",
+                              "extract",
+                              "assert",
+                              "humanCheckpoint"
+                            ]
+                          },
+                          "selectors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "valueRef": {
+                            "type": "string",
+                            "pattern": "^secret:[A-Za-z0-9_.-]+$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "extractKey": {
+                            "type": "string"
+                          },
+                          "pattern": {
+                            "type": "string"
+                          },
+                          "optional": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind"
+                        ]
+                      },
+                      "default": []
+                    },
+                    "secretKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": []
+                    },
+                    "schedule": {
+                      "type": "object",
+                      "properties": {
+                        "cron": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "minLength": 1,
+                          "default": "UTC"
+                        },
+                        "channelId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "cron",
+                        "channelId"
+                      ]
+                    },
+                    "lastRun": {
+                      "type": "object",
+                      "properties": {
+                        "runId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "completed",
+                            "failed"
+                          ]
+                        },
+                        "at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "runId",
+                        "status",
+                        "at"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "name",
+                    "ownerId",
+                    "agentId",
+                    "startUrl",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "procedureId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/procedures/{procedureId}/secrets/{key}": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "procedureId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stored": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "stored"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "procedureId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/procedures/{procedureId}/run": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "procedureId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "runId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/connectors": {
       "get": {
         "responses": {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { invoke } from "@tauri-apps/api/core";
-import { channels, members, mentions, models, messages, tasks, approvals, runs, workspace, plugins, knowledge, connectors } from "@perch/api-contract";
+import { channels, members, mentions, models, messages, tasks, approvals, runs, workspace, plugins, knowledge, procedures, connectors } from "@perch/api-contract";
 import { signOut } from "./auth.js";
 import { pushToast } from "./toasts.js";
 
@@ -109,6 +109,31 @@ export const api = {
     verify: (path: string) => invokeApi("knowledge_verify", { input: { path } }, knowledge.verifyOutput),
     reindex: () => invokeApi("knowledge_reindex", {}, knowledge.reindexOutput),
   },
+  procedures: {
+    list: () => invokeApi("procedures_list", {}, procedures.listProceduresOutput),
+    get: (procedureId: string) => invokeApi("procedures_get", { procedureId }, procedures.getProcedureOutput),
+    create: (input: Body<typeof procedures.createProcedureInput, "workspaceId">) =>
+      invokeApi("procedures_create", { input }, procedures.createProcedureOutput),
+    update: (procedureId: string, input: Body<typeof procedures.updateProcedureInput, "procedureId">) =>
+      invokeApi("procedures_update", { procedureId, input }, procedures.updateProcedureOutput),
+    delete: (procedureId: string) => invokeApi("procedures_delete", { procedureId }, procedures.deleteProcedureOutput),
+    run: (procedureId: string) => invokeApi("procedures_run", { procedureId }, procedures.runProcedureOutput),
+    secrets: {
+      put: (procedureId: string, key: string, value: string) =>
+        invokeApi("procedures_secret_put", { procedureId, key, input: { value } }, procedures.putProcedureSecretOutput),
+      delete: (procedureId: string, key: string) =>
+        invokeApi("procedures_secret_delete", { procedureId, key }, procedures.deleteProcedureSecretOutput),
+    },
+    /** Run a ProcedureStep list in the user's own browser via the local Playwright sidecar.
+     * Streams `procedure:local` Tauri events; resolves with whatever `extract` steps captured. */
+    replayLocal: (steps: unknown, secrets?: Record<string, string>, startUrl?: string) =>
+      invokeApi("procedure_replay_local", { steps, secrets, startUrl }, z.record(z.string(), z.string())),
+    /** Record a routine by watching the user drive their own browser (local sidecar). Resolves
+     * with the captured steps when the window closes or `recordStopLocal` is called. */
+    recordLocal: (startUrl: string) =>
+      invokeApi("procedure_record_local", { startUrl }, z.object({ steps: z.array(z.unknown()), startUrl: z.string() })),
+    recordStopLocal: () => invokeApi("procedure_record_stop", {}, z.void()),
+  },
   artifacts: {
     getContent: (url: string) => invokeApi("artifacts_get_content", { url }, z.string()),
   },
@@ -121,6 +146,9 @@ export const api = {
     saveConfig: (connectorId: string, values: Record<string, string>) =>
       invokeApi("connector_save_config", { connectorId, input: { values } }, connectors.putConnectorConfigOutput),
     clearConfig: (connectorId: string) => invokeApi("connector_clear_config", { connectorId }, connectors.deleteConnectorConfigOutput),
+
+    /** Startup check — which browsers the local sidecar can drive. */
+    listBrowsers: () => invokeApi("list_browsers", {}, z.object({ system: z.array(z.string()), bundled: z.boolean() })),
 
     /** Per-agent Google Workspace connect flow — opens the system browser to Google's consent
      * screen for `memberId`; resolves once the browser is opened, not once the flow completes

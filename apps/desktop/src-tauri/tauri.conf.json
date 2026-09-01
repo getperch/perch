@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.perch.app",
   "build": {
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
+    "beforeDevCommand": "pnpm sidecar:build && pnpm dev",
+    "beforeBuildCommand": "pnpm sidecar:build && pnpm build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -37,12 +37,26 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/perch-sidecar"
     ]
   },
   "plugins": {
     "deep-link": {
-      "mobile": [{ "scheme": ["perch"], "appLink": false }],
-      "desktop": { "schemes": ["perch"] }
+      "mobile": [
+        {
+          "scheme": [
+            "perch"
+          ],
+          "appLink": false
+        }
+      ],
+      "desktop": {
+        "schemes": [
+          "perch"
+        ]
+      }
     }
   }
 }

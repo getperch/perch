@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
-import type { AgentConfig, ApprovalPolicy, ArtifactRef, Channel, Member, Message, SkillDoc, Task, TaskSource, ToolGrant, TriggerConfig } from "@perch/core";
+import type { AgentConfig, ApprovalPolicy, ArtifactRef, Channel, Member, Message, ProcedureStep, SkillDoc, Task, TaskSource, ToolGrant, TriggerConfig } from "@perch/core";
 import { pluginToAgentDraft } from "@perch/core";
 import {
   AppShell,
@@ -16,6 +16,10 @@ import {
   NewDmScreen,
   RunDetailScreen,
   TasksScreen,
+  RoutinesScreen,
+  RoutineDetailScreen,
+  RoutineRecorderScreen,
+  type RecorderSaveInput,
   SettingsScreen,
   KnowledgeScreen,
   AgentDetailScreen,
@@ -28,18 +32,21 @@ import {
   BellIcon,
   CheckSquareIcon,
   GridIcon,
+  RepeatIcon,
   DocumentIcon,
   SettingsIcon,
   type NavItem,
   type ImportedAgentDraft,
   type KnowledgeDraft,
 } from "@perch/ui";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "./lib/api-client.js";
 import { useAuth, signOut } from "./lib/auth.js";
 import { useChannelStream } from "./lib/stream.js";
 import { useMentionNotifications } from "./lib/notifications.js";
 import { useToasts, dismissToast, pushToast } from "./lib/toasts.js";
 import { SignIn } from "./SignIn.js";
+import { ConnectorSetupScreen } from "./ConnectorSetupScreen.js";
 
 type Screen =
   | { name: "home" }
@@ -50,9 +57,13 @@ type Screen =
   | { name: "add-member" }
   | { name: "run"; runId: string }
   | { name: "tasks" }
+  | { name: "routines" }
+  | { name: "routine"; id: string }
+  | { name: "routine-record" }
   | { name: "knowledge" }
   | { name: "people" }
   | { name: "settings" }
+  | { name: "connector-setup"; connectorId: string }
   | { name: "agent"; memberId: string };
 
 type MessagesPage = { messages: Message[]; nextCursor?: string };
@@ -130,6 +141,9 @@ function Workspace() {
   const channels = useQuery({ queryKey: ["channels", "list"], queryFn: () => api.channels.list() });
   const members = useQuery({ queryKey: ["members", "list"], queryFn: () => api.members.list() });
   const tasks = useQuery({ queryKey: ["tasks", "list"], queryFn: () => api.tasks.list() });
+  const procedures = useQuery({ queryKey: ["procedures", "list"], queryFn: () => api.procedures.list() });
+  // Startup: which browsers the local setup sidecar can drive (shared cache — ConnectorSetupScreen reads it).
+  useQuery({ queryKey: ["browsers"], queryFn: () => api.connectors.listBrowsers(), staleTime: Infinity, retry: false });
   const workspace = useQuery({ queryKey: ["workspace", "get"], queryFn: () => api.workspace.get() });
   const me = useQuery({ queryKey: ["members", "me"], queryFn: () => api.members.me() });
   // Polled so a new @mention surfaces (and fires a desktop notification, below) without the user
@@ -264,6 +278,29 @@ function Workspace() {
     queryFn: () => api.runs.get(screen.name === "run" ? screen.runId : ""),
     enabled: screen.name === "run",
   });
+  const selectedProcedure = useQuery({
+    queryKey: ["procedures", "get", screen.name === "routine" ? screen.id : undefined],
+    queryFn: () => api.procedures.get(screen.name === "routine" ? screen.id : ""),
+    enabled: screen.name === "routine",
+  });
+  // Routine recording runs locally through the Playwright sidecar (see src-tauri/src/sidecar.rs):
+  // `recordLocal` opens the user's own browser and resolves with the captured steps when it's
+  // closed / stopped; `procedure:local` events stream progress in the meantime.
+  const [recording, setRecording] = useState<boolean>(false);
+  const [recSteps, setRecSteps] = useState<ProcedureStep[]>([]);
+  const [recStatus, setRecStatus] = useState<"recording" | "complete" | "error" | undefined>(undefined);
+  useEffect(() => {
+    if (screen.name !== "routine-record") return;
+    const un = listen<{ t: string; kind?: string; detail?: string }>("procedure:local", (e) => {
+      const p = e.payload;
+      if (p.t === "step" && p.kind !== "note") {
+        setRecSteps((prev) => [...prev, { id: `live-${prev.length}`, kind: (p.kind as ProcedureStep["kind"]) ?? "click", selectors: [], label: p.detail }]);
+      }
+    });
+    return () => {
+      void un.then((f) => f());
+    };
+  }, [screen.name]);
 
   const sendMessage = useMutation({
     mutationFn: (vars: { channelId: string; text: string; optimisticId: string }) => api.messages.send(vars.channelId, { text: vars.text }),
@@ -435,6 +472,75 @@ function Workspace() {
       api.tasks.update(vars.taskId, { status: vars.status, detail: vars.detail }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks", "list"] }),
   });
+  const startRecording = useMutation({
+    mutationFn: (startUrl: string) => {
+      setRecording(true);
+      setRecSteps([]);
+      setRecStatus("recording");
+      return api.procedures.recordLocal(startUrl);
+    },
+    onSuccess: (res) => {
+      setRecSteps(res.steps as ProcedureStep[]);
+      setRecStatus("complete");
+    },
+    onError: () => setRecStatus("error"),
+  });
+  const stopRecording = useMutation({
+    // The `recordLocal` promise above resolves once the sidecar flushes — its onSuccess sets the steps.
+    mutationFn: () => api.procedures.recordStopLocal(),
+  });
+  const saveRecordedRoutine = useMutation({
+    mutationFn: async (input: RecorderSaveInput) => {
+      const proc = await api.procedures.create({
+        name: input.name,
+        agentId: input.agentId,
+        channelId: input.channelId,
+        startUrl: input.startUrl,
+        steps: input.steps,
+        schedule: input.schedule,
+      });
+      for (const s of input.secrets) await api.procedures.secrets.put(proc.id, s.key, s.value);
+      return proc;
+    },
+    onSuccess: (proc) => {
+      setRecording(false);
+      setRecStatus(undefined);
+      queryClient.invalidateQueries({ queryKey: ["procedures", "list"] });
+      setScreen({ name: "routine", id: proc.id });
+    },
+  });
+  const runProcedure = useMutation({
+    mutationFn: (procedureId: string) => api.procedures.run(procedureId),
+    onSuccess: (res) => {
+      pushToast("info", "Routine started");
+      setScreen({ name: "run", runId: res.runId });
+    },
+  });
+  const setProcedureSecret = useMutation({
+    mutationFn: (vars: { procedureId: string; key: string; value: string }) => api.procedures.secrets.put(vars.procedureId, vars.key, vars.value),
+    onSuccess: (_d, vars) => queryClient.invalidateQueries({ queryKey: ["procedures", "get", vars.procedureId] }),
+  });
+  const clearProcedureSecret = useMutation({
+    mutationFn: (vars: { procedureId: string; key: string }) => api.procedures.secrets.delete(vars.procedureId, vars.key),
+    onSuccess: (_d, vars) => queryClient.invalidateQueries({ queryKey: ["procedures", "get", vars.procedureId] }),
+  });
+  const updateProcedure = useMutation({
+    mutationFn: (vars: { procedureId: string } & Parameters<typeof api.procedures.update>[1]) => {
+      const { procedureId, ...patch } = vars;
+      return api.procedures.update(procedureId, patch);
+    },
+    onSuccess: (proc) => {
+      queryClient.invalidateQueries({ queryKey: ["procedures", "list"] });
+      queryClient.invalidateQueries({ queryKey: ["procedures", "get", proc.id] });
+    },
+  });
+  const deleteProcedure = useMutation({
+    mutationFn: (procedureId: string) => api.procedures.delete(procedureId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["procedures", "list"] });
+      setScreen({ name: "routines" });
+    },
+  });
   const updateAgentTriggers = useMutation({
     mutationFn: (vars: { memberId: string; triggers: TriggerConfig[] }) => api.members.updateAgent(vars.memberId, { config: { triggers: vars.triggers } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["members", "list"] }),
@@ -565,6 +671,7 @@ function Workspace() {
     { key: "mentions", label: "Notifications", glyph: <BellIcon size={15} />, count: unreadMentions || undefined, accentCount: true },
     { key: "tasks", label: "Tasks", glyph: <CheckSquareIcon size={15} />, count: tasks.data?.filter((t: Task) => t.status !== "done").length },
     { key: "knowledge", label: "Knowledge", glyph: <DocumentIcon size={15} stroke="currentColor" /> },
+    { key: "routines", label: "Routines", glyph: <RepeatIcon size={15} /> },
     { key: "canvases", label: "Canvases", glyph: <GridIcon size={15} /> },
     { key: "settings", label: "Settings", glyph: <SettingsIcon size={15} /> },
   ];
@@ -904,6 +1011,75 @@ function Workspace() {
           );
         }
 
+        if (screen.name === "routines") {
+          return (
+            <RoutinesScreen
+              procedures={procedures.data ?? []}
+              members={members.data ?? []}
+              membersById={membersById}
+              channelsById={channelsById}
+              onOpen={(id) => setScreen({ name: "routine", id })}
+              onTeach={() => {
+                setRecording(false);
+                setScreen({ name: "routine-record" });
+              }}
+              isNarrow={isNarrow}
+              onOpenSidebar={openSidebar}
+            />
+          );
+        }
+
+        if (screen.name === "routine-record") {
+          return (
+            <RoutineRecorderScreen
+              recording={recording ? { recordingId: "local" } : undefined}
+              polledSteps={recSteps}
+              recordingStatus={recStatus}
+              starting={startRecording.isPending && recStatus === "recording" && recSteps.length === 0}
+              stopping={stopRecording.isPending}
+              saving={saveRecordedRoutine.isPending}
+              error={startRecording.error?.message ?? stopRecording.error?.message ?? saveRecordedRoutine.error?.message}
+              members={members.data ?? []}
+              channels={groupChannels}
+              onStart={(startUrl) => startRecording.mutate(startUrl)}
+              onStop={() => stopRecording.mutate()}
+              onSave={(input) => saveRecordedRoutine.mutate(input)}
+              onCancel={() => {
+                if (recording) stopRecording.mutate();
+                setRecording(false);
+                setRecStatus(undefined);
+                setScreen({ name: "routines" });
+              }}
+            />
+          );
+        }
+
+        if (screen.name === "routine") {
+          const proc = selectedProcedure.data;
+          if (!proc) return <LoadingScreen label="Loading routine…" />;
+          return (
+            <RoutineDetailScreen
+              procedure={proc}
+              members={members.data ?? []}
+              membersById={membersById}
+              channels={groupChannels}
+              onBack={() => setScreen({ name: "routines" })}
+              onSave={(patch) => updateProcedure.mutate({ procedureId: proc.id, ...patch })}
+              onDelete={() => deleteProcedure.mutate(proc.id)}
+              onRunNow={() => runProcedure.mutate(proc.id)}
+              onRerecord={() => {
+                setRecording(false);
+                setScreen({ name: "routine-record" });
+              }}
+              onSetSecret={(key, value) => setProcedureSecret.mutate({ procedureId: proc.id, key, value })}
+              onClearSecret={(key) => clearProcedureSecret.mutate({ procedureId: proc.id, key })}
+              running={runProcedure.isPending}
+              saving={updateProcedure.isPending}
+              error={updateProcedure.error?.message ?? selectedProcedure.error?.message ?? runProcedure.error?.message}
+            />
+          );
+        }
+
         if (screen.name === "agent") {
           const agent = membersById[screen.memberId];
           if (!agent || agent.kind !== "agent") return null;
@@ -937,6 +1113,18 @@ function Workspace() {
           );
         }
 
+        if (screen.name === "connector-setup") {
+          return (
+            <ConnectorSetupScreen
+              connectorId={screen.connectorId}
+              onDone={(configured) => {
+                if (configured) queryClient.invalidateQueries({ queryKey: ["connectors", "list"] });
+                setScreen({ name: "settings" });
+              }}
+            />
+          );
+        }
+
         if (screen.name === "settings" || screen.name === "people") {
           if (!workspace.data) return null;
           return (
@@ -960,6 +1148,7 @@ function Workspace() {
               connectorsError={connectorsList.error?.message ?? saveConnectorConfig.error?.message ?? clearConnectorConfig.error?.message}
               onConnectorConfigSave={(connectorId, values) => saveConnectorConfig.mutate({ connectorId, values })}
               onConnectorConfigClear={(connectorId) => clearConnectorConfig.mutate(connectorId)}
+              onStartConnectorSetup={(connectorId) => setScreen({ name: "connector-setup", connectorId })}
               onAddPeople={() => setAddModal("people")}
               onOpenMember={(id) => setSelectedMemberId(id)}
               onConfigureAgent={(id) => setScreen({ name: "agent", memberId: id })}

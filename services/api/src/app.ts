@@ -14,6 +14,7 @@ import { runsApp } from "./routers/runs.js";
 import { workspaceApp } from "./routers/workspace.js";
 import { pluginsApp } from "./routers/plugins.js";
 import { knowledgeApp } from "./routers/knowledge.js";
+import { proceduresApp } from "./routers/procedures.js";
 import { connectorsApp } from "./routers/connectors.js";
 
 const routes = new OpenAPIHono<AppEnv>();
@@ -33,6 +34,7 @@ routes.route("/runs", runsApp);
 routes.route("/workspace", workspaceApp);
 routes.route("/plugins", pluginsApp);
 routes.route("/knowledge", knowledgeApp);
+routes.route("/procedures", proceduresApp);
 routes.route("/connectors", connectorsApp);
 
 routes.doc31("/openapi.json", { openapi: "3.1.0", info: { title: "Perch API", version: "0.1.0" } });

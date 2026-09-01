@@ -7,30 +7,16 @@ import { estimateCostUsd } from "./pricing.js";
 import { CONCISENESS_INSTRUCTIONS, TOOL_USE_INSTRUCTIONS, formatAgentResponse } from "./response-schema.js";
 import { resolveGrantedTools } from "./mcp-gateways.js";
 import { ApprovalInterventionHandler } from "./tools.js";
+import { runProcedure, type ProcedureRunEvent } from "./procedure.js";
+import { sanitizeRunError } from "./sanitize.js";
 
-/**
- * Turns a thrown error into a short line safe to show a user in a channel and on the run page:
- * strips ARNs, 12-digit account ids, `file://` and absolute paths, and `at fn (file:line:col)`
- * stack frames, keeps the first meaningful sentence(s), and caps the length. Most real failures
- * here — model access denied, tool gateway 4xx/5xx, timeouts, malformed responses — carry a
- * useful message that survives this untouched; only infra plumbing detail gets scrubbed.
- */
-export function sanitizeRunError(err: unknown): string {
-  const raw = err instanceof Error ? err.message || err.name : String(err ?? "Unexpected error");
-  const cleaned = raw
-    .replace(/arn:aws[a-z-]*:[^\s"'`)]+/gi, "<resource>")
-    .replace(/\b\d{12}\b/g, "<id>")
-    .replace(/\bfile:\/\/\S+/gi, "")
-    .replace(/(?:\/[\w.@-]+){3,}/g, "<path>")
-    .replace(/\n\s*at\s+.*/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const firstSentences = cleaned.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
-  const out = (firstSentences || cleaned).slice(0, 300).trim();
-  return out || "The run stopped on an unexpected error.";
-}
+export { sanitizeRunError };
 
-export type AgentRunEvent = {
+export type AgentRunEvent = AgentMessageRunEvent | ProcedureRunEvent;
+
+export type AgentMessageRunEvent = {
+  /** absent on the message path (the original shape); `"procedure"` routes to replay instead */
+  kind?: "message";
   workspaceId: string;
   channelId: string;
   messageId: string;
@@ -53,7 +39,7 @@ export type AgentRunEvent = {
 
 /** A short system-prompt block describing the channel the agent is working in, so a channel's
  * stated goal actually steers the agents running in it. Empty when nothing useful is known. */
-function channelContext(event: AgentRunEvent): string {
+function channelContext(event: AgentMessageRunEvent): string {
   const name = event.channelName ? `#${event.channelName}` : undefined;
   const parts = [name, event.channelTopic?.trim() || undefined].filter(Boolean);
   if (parts.length === 0) return "";
@@ -78,6 +64,10 @@ function channelContext(event: AgentRunEvent): string {
  * instead of ever completing the step.
  */
 export const handler: ReturnType<typeof workflow.handler> = workflow.handler(async (event: AgentRunEvent, ctx: workflow.Context) => {
+  // Routine replay is a wholly separate path — no reasoning loop, no channel message trigger. It
+  // drives a taught browser workflow step by step (see procedure.ts) and returns.
+  if (event.kind === "procedure") return runProcedure(event, ctx);
+
   const agent = await ctx.step("load-agent-config", () => loadAgentConfig(event.workspaceId, event.agentId));
 
   const budget = await ctx.step("check-budget", () => checkBudget(event.workspaceId, agent));
