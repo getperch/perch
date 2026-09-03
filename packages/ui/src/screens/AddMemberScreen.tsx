@@ -410,25 +410,10 @@ export function AddMemberScreen({
 
             <Card>
               <SectionLabel>When it works</SectionLabel>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <TriggerRow
-                  glyph="@"
-                  title="On mention"
-                  sub="Responds when @mentioned in a channel it's in"
-                  on={agentDraft.triggerEnabled.mention ?? true}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, mention: !(d.triggerEnabled.mention ?? true) } }))}
-                />
-                <TriggerRow
-                  glyph="👀"
-                  title="On relevant messages"
-                  sub="Chimes in when a message looks relevant to its role, even without being @mentioned"
-                  on={agentDraft.triggerEnabled.relevant ?? false}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, relevant: !d.triggerEnabled.relevant } }))}
-                />
-              </div>
-              <div style={{ fontSize: 12, color: color.muted, lineHeight: 1.5, marginTop: 8 }}>
-                Scheduled and webhook triggers are set up per agent from <strong>Tasks → Schedules</strong>
-                once the agent exists (a schedule needs a time and a prompt).
+              <div style={{ fontSize: 12.5, color: color.muted, lineHeight: 1.55 }}>
+                New agents respond when <strong>@mentioned</strong> in a channel they're in. Set up
+                schedules (e.g. a daily digest) from <strong>Tasks → Schedules</strong> once the
+                agent exists.
               </div>
             </Card>
           </div>
@@ -549,23 +534,6 @@ export function ModelSelect({ models, value, onChange }: { models: ModelOption[]
   );
 }
 
-function TriggerRow({ glyph, title, sub, on, onClick }: { glyph: string; title: string; sub: string; on: boolean; onClick: () => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${color.border}`, borderRadius: radius.lg, padding: 12 }}>
-      <span style={{ width: 28, height: 28, flex: "none", borderRadius: radius.md, background: color.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>{glyph}</span>
-      <span style={{ flex: 1 }}>
-        <span style={{ display: "block", fontSize: 12, fontWeight: 600 }}>{title}</span>
-        <span style={{ display: "block", fontSize: 12, color: color.muted }}>{sub}</span>
-      </span>
-      <button
-        onClick={onClick}
-        style={{ width: 36, height: 20, borderRadius: radius.pill, border: "none", background: on ? color.ink : color.borderStrong, position: "relative", cursor: "pointer" }}
-      >
-        <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 16, height: 16, borderRadius: radius.pill, background: color.surface, transition: "left .12s" }} />
-      </button>
-    </div>
-  );
-}
 
 function ChannelChips({ channels, selectedIds, onToggle }: { channels: Channel[]; selectedIds: string[]; onToggle: (id: string) => void }) {
   return (

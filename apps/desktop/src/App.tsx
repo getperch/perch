@@ -910,11 +910,15 @@ function Workspace() {
                     instructions: draft.instructions,
                     model: draft.modelId as never,
                     tools: draft.toolNames.map((toolName) => ({ toolName, needsApproval: !!draft.toolApprovalOverrides[toolName] })),
-                    // Only the config-free trigger kinds come from these toggles; `schedule` /
-                    // `webhook` need a cron / path and are added later from Tasks → Schedules.
-                    triggers: Object.entries(draft.triggerEnabled)
-                      .filter(([kind, on]) => on && (kind === "mention" || kind === "relevant"))
-                      .map(([kind]) => ({ kind: kind as never, enabled: true })),
+                    // New agents respond to @mentions by default; scheduled / webhook triggers
+                    // are added per agent from Tasks → Schedules. An imported plugin may carry its
+                    // own trigger prefs (mention/relevant) — honour those if present.
+                    triggers: (() => {
+                      const fromDraft = Object.entries(draft.triggerEnabled)
+                        .filter(([kind, on]) => on && (kind === "mention" || kind === "relevant"))
+                        .map(([kind]) => ({ kind: kind as never, enabled: true }));
+                      return fromDraft.length ? fromDraft : [{ kind: "mention" as never, enabled: true }];
+                    })(),
                     dailySpendCapUsd: draft.dailySpendCapUsd,
                     postsInChannelIds: draft.postsInChannelIds as never,
                     skills: draft.skills,

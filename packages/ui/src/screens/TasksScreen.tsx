@@ -3,7 +3,7 @@ import type { AgentMember, Channel, Member, Task, TaskSource, TriggerConfig } fr
 import { Avatar } from "../primitives/Avatar.js";
 import { Button } from "../primitives/Button.js";
 import { Pill } from "../primitives/Pill.js";
-import { MenuIcon } from "../icons.js";
+import { MenuIcon, TrashIcon } from "../icons.js";
 import { color, font, radius } from "../tokens.js";
 import { avatarColorsFor } from "../utils.js";
 
@@ -133,6 +133,13 @@ export function TasksScreen({
     onUpdateAgentTriggers(row.agentId, next);
   }
 
+  function deleteSchedule(row: ScheduleRow) {
+    onUpdateAgentTriggers(
+      row.agentId,
+      row.agent.config.triggers.filter((_, i) => i !== row.index),
+    );
+  }
+
   function runScheduleNow(row: ScheduleRow) {
     onCreateTask({
       title: row.trigger.label || "Scheduled task",
@@ -258,6 +265,14 @@ export function TasksScreen({
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
                       <Button variant="secondary" onClick={() => runScheduleNow(row)}>Run now</Button>
                       <Switch on={row.trigger.enabled} onClick={() => toggleSchedule(row)} />
+                      <button
+                        onClick={() => deleteSchedule(row)}
+                        className="ws-hoverable"
+                        aria-label="Delete schedule"
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, border: "none", background: "none", borderRadius: radius.md, cursor: "pointer", color: color.mutedLight }}
+                      >
+                        <TrashIcon />
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -181,14 +181,15 @@ export function makeApi(args: {
           resources: ["*"],
         },
       ],
-      // playwright-core's bundle has a `require("chromium-bidi/...")` for its BiDi protocol
-      // support — a real code path in the package, but not one this handler ever exercises (it
-      // only uses `chromium.connectOverCDP`, never BiDi). `chromium-bidi` isn't installed
-      // anywhere in this repo (confirmed — no @chromium-bidi entry in the pnpm store) since
-      // nothing here needs it; esbuild still tries to statically resolve it while bundling and
-      // fails outright. Marking it external (not `nodejs.install`, which would require it to
-      // actually be installed) leaves it as a plain runtime `require` that's simply never called.
-      nodejs: { esbuild: { external: ["chromium-bidi"] } },
+      // playwright-core must not be bundled: its `package.ts` does
+      // `require(path.join(__dirname, "..", "package.json"))` at import time, and once esbuild
+      // inlines it into `.sst/artifacts/<Fn>/bundle.mjs` that resolves to `.sst/artifacts/
+      // package.json`, which doesn't exist ("Cannot find module .../.sst/artifacts/package.json").
+      // `install` keeps it as a real node_modules package (with its own package.json next to it)
+      // instead of inlining it. That also stops esbuild tracing playwright-core's internal
+      // `require("chromium-bidi/...")` (BiDi protocol support this handler never hits — it only
+      // uses `chromium.connectOverCDP`), so the old `external: ["chromium-bidi"]` hack is moot.
+      nodejs: { install: ["playwright-core"] },
     },
     { provider: toolsProvider },
   );
@@ -230,9 +231,10 @@ export function makeApi(args: {
       HOME_REGION: region,
       STAGE: $app.stage,
     },
-    // playwright-core's `require("chromium-bidi/...")` — same bundling workaround as ToolBrowser
-    // (replay only uses `chromium.connectOverCDP`, never BiDi).
-    nodejs: { esbuild: { external: ["chromium-bidi"] } },
+    // Keep playwright-core out of the bundle — same reason as ToolBrowser above (its `package.ts`
+    // requires a sibling `package.json` at import time, which breaks once inlined into the
+    // artifact bundle). Routine replay only uses `chromium.connectOverCDP`, never BiDi.
+    nodejs: { install: ["playwright-core"] },
     permissions: [
       {
         actions: ["bedrock-agentcore:StartBrowserSession", "bedrock-agentcore:StopBrowserSession", "bedrock-agentcore:GetBrowserSession", "bedrock-agentcore:ConnectBrowserAutomationStream"],
