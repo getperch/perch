@@ -51,7 +51,52 @@ function emit(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 const step = (kind: string, detail: string) => emit({ t: "step", kind, detail });
-const human = (detail: string) => emit({ t: "need_human", detail });
+
+// ── stdin control channel ────────────────────────────────────────────────────
+// The Rust side writes `resume` / `stop` lines (procedure_resume / procedure_record_stop).
+let stopped = false;
+const resumeWaiters: (() => void)[] = [];
+process.stdin.setEncoding("utf8");
+let _stdinBuf = "";
+process.stdin.on("data", (d: string) => {
+  _stdinBuf += d;
+  let nl: number;
+  while ((nl = _stdinBuf.indexOf("\n")) >= 0) {
+    const line = _stdinBuf.slice(0, nl).trim();
+    _stdinBuf = _stdinBuf.slice(nl + 1);
+    if (line === "stop") stopped = true;
+    if (line === "resume" || line === "stop") resumeWaiters.splice(0).forEach((f) => f());
+  }
+});
+
+/** Pause the routine and ask the operator to act. Resolves when they click Continue in Perch
+ * (a `resume` line), or, if `until` is given, when that condition first holds. */
+async function needHuman(detail: string, until?: () => Promise<boolean>): Promise<void> {
+  emit({ t: "need_human", detail });
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    resumeWaiters.push(finish);
+    if (until) {
+      const poll = async () => {
+        while (!done) {
+          try {
+            if (await until()) return finish();
+          } catch {
+            /* keep polling */
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      };
+      void poll();
+    }
+  });
+  step("note", "resumed");
+}
 
 // Channels Playwright can drive with nothing downloaded, best first. `PERCH_BROWSER_CHANNEL` (set
 // by the Rust side from the last successful probe) is tried ahead of the list.
@@ -132,18 +177,6 @@ async function firstMatch(page: Page, selectors: string[], timeoutMs = 8000): Pr
   }
 }
 
-async function waitUntil(check: () => Promise<boolean>, { timeoutMs = 300000, pollMs = 2500 } = {}): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      if (await check()) return true;
-    } catch {
-      /* keep polling */
-    }
-    if (Date.now() > deadline) return false;
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-}
 
 async function replay(page: Page, task: { startUrl?: string; steps: ProcedureStep[]; secrets?: Record<string, string> }): Promise<void> {
   const secrets = task.secrets ?? {};
@@ -153,47 +186,61 @@ async function replay(page: Page, task: { startUrl?: string; steps: ProcedureSte
     step("navigate", task.startUrl);
   }
 
+  // An element step whose selectors miss doesn't abort the routine — it asks the operator to do
+  // that step in the real browser and click Continue, then moves on. Console UI drifts constantly
+  // and half these flows need a human touch anyway; a hard failure mid-sign-in is the worst option.
+  const findOrAsk = async (s: ProcedureStep, label: string, timeoutMs = 10000): Promise<Locator | undefined> => {
+    const el = await firstMatch(page, s.selectors, timeoutMs);
+    if (el) return el;
+    if (s.optional) {
+      step("note", `skipped "${label}" (not found)`);
+      return undefined;
+    }
+    await needHuman(`I couldn't find "${label}" on the page — please do this step in the browser, then click Continue.`);
+    return undefined;
+  };
+
   for (const s of task.steps) {
+    if (stopped) break;
     const label = s.label || `${s.kind} ${s.id}`;
     switch (s.kind) {
       case "goto": {
         if (!s.url) throw new Error(`step ${s.id}: goto has no url`);
-        await page.goto(s.url, { waitUntil: "domcontentloaded" });
+        await page.goto(s.url, { waitUntil: "domcontentloaded" }).catch(() => {});
         step("navigate", s.url);
         break;
       }
       case "waitFor": {
-        if (!(await firstMatch(page, s.selectors, 20000))) throw new Error(`step ${s.id}: nothing matched ${JSON.stringify(s.selectors)}`);
+        await findOrAsk(s, label, 20000);
         step("wait", label);
         break;
       }
       case "click": {
-        const el = await firstMatch(page, s.selectors);
-        if (!el) {
-          if (s.optional) {
-            step("note", `skipped optional "${label}" (no match)`);
-            break;
-          }
-          throw new Error(`step ${s.id}: nothing matched ${JSON.stringify(s.selectors)}`);
+        const el = await findOrAsk(s, label);
+        if (el) {
+          await el.click().catch(async () => {
+            await needHuman(`I couldn't click "${label}" — please click it in the browser, then Continue.`);
+          });
+          await page.waitForTimeout(500);
+          step("click", label);
         }
-        await el.click();
-        await page.waitForTimeout(500);
-        step("click", label);
         break;
       }
       case "fill": {
-        const el = await firstMatch(page, s.selectors);
-        if (!el) throw new Error(`step ${s.id}: nothing matched ${JSON.stringify(s.selectors)}`);
-        const value = s.valueRef ? (secrets[s.valueRef.slice("secret:".length)] ?? "") : (s.value ?? "");
-        await el.fill(value);
-        step("type", `${label} = ${s.valueRef ? "•••" : value.slice(0, 40)}`);
+        const el = await findOrAsk(s, label);
+        if (el) {
+          const value = s.valueRef ? (secrets[s.valueRef.slice("secret:".length)] ?? "") : (s.value ?? "");
+          await el.fill(value);
+          step("type", `${label} = ${s.valueRef ? "•••" : value.slice(0, 40)}`);
+        }
         break;
       }
       case "select": {
-        const el = await firstMatch(page, s.selectors);
-        if (!el) throw new Error(`step ${s.id}: nothing matched ${JSON.stringify(s.selectors)}`);
-        await el.selectOption(s.value ?? "");
-        step("select", label);
+        const el = await findOrAsk(s, label);
+        if (el) {
+          await el.selectOption(s.value ?? "");
+          step("select", label);
+        }
         break;
       }
       case "extract": {
@@ -206,28 +253,33 @@ async function replay(page: Page, task: { startUrl?: string; steps: ProcedureSte
           const el = await firstMatch(page, s.selectors);
           text = el ? (await el.innerText()).trim() : "";
         }
-        if (!text && !s.optional) throw new Error(`step ${s.id}: extract found nothing`);
-        const key = s.extractKey || s.id;
-        extracted[key] = text.slice(0, 4000);
-        emit({ t: "extract", key, value: extracted[key] });
+        if (!text && !s.optional) {
+          await needHuman(`I couldn't read "${s.extractKey || label}" from the page — copy it from the browser, then Continue (or fill it in manually afterwards).`);
+        }
+        if (text) {
+          const key = s.extractKey || s.id;
+          extracted[key] = text.slice(0, 4000);
+          emit({ t: "extract", key, value: extracted[key] });
+        }
         break;
       }
       case "assert": {
         const el = await firstMatch(page, s.selectors);
         const text = el ? await el.innerText() : "";
-        if (s.value && !text.includes(s.value)) throw new Error(`step ${s.id}: assertion failed — "${s.value}" not in "${text.slice(0, 120)}"`);
-        step("note", `assert ok — ${label}`);
+        if (s.value && !text.includes(s.value)) {
+          await needHuman(`Expected "${s.value}" on the page but didn't see it — sort it out in the browser, then Continue.`);
+        } else {
+          step("note", `assert ok — ${label}`);
+        }
         break;
       }
       case "humanCheckpoint": {
-        human(s.label || "Do the next step in the browser, then it continues automatically.");
-        const ok = await waitUntil(async () => {
-          if (s.selectors.length) return Boolean(await firstMatch(page, s.selectors, 1000));
-          if (s.url) return page.url().includes(s.url);
-          return false;
-        });
-        if (!ok && !s.optional) throw new Error(`step ${s.id}: timed out waiting for you to finish "${label}"`);
-        step("note", ok ? `resumed after "${label}"` : `moved on from "${label}" (timed out)`);
+        // Always waits for an explicit Continue from the Perch UI — a URL/selector guess races the
+        // redirects during a multi-page Google sign-in. The condition, if any, is just a shortcut.
+        await needHuman(
+          s.label || "Do the next step in the browser, then click Continue.",
+          s.selectors.length ? async () => Boolean(await firstMatch(page, s.selectors, 1000)) : undefined,
+        );
         break;
       }
       default:
@@ -308,18 +360,15 @@ async function record(page: Page, task: { startUrl: string }): Promise<void> {
   await page.goto(task.startUrl, { waitUntil: "domcontentloaded" });
   await page.evaluate(recorderMain).catch(() => {});
   step("navigate", task.startUrl);
-  human("Do the workflow in the browser window. Close the window (or send stop) when you're done.");
+  emit({ t: "need_human", detail: "Do the workflow in the browser window, then press Stop (or just close the window)." });
 
-  // End on: browser/page closed, or a `{"cmd":"stop"}` line on stdin.
+  // End on: window/context closed, or a `stop` line on stdin (see the module-level stdin handler).
   await new Promise<void>((resolve) => {
-    page.on("close", () => resolve());
-    page.context().on("close", () => resolve());
-    process.stdin.setEncoding("utf8");
-    let buf = "";
-    process.stdin.on("data", (d) => {
-      buf += d;
-      if (buf.includes("stop")) resolve();
-    });
+    if (stopped) return resolve();
+    const done = () => resolve();
+    page.on("close", done);
+    page.context().on("close", done);
+    resumeWaiters.push(done); // `stop` also wakes resumeWaiters
   });
 
   emit({ t: "recording", steps, startUrl: task.startUrl });

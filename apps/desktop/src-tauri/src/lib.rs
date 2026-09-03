@@ -47,6 +47,7 @@ pub fn run() {
             sidecar::procedure_replay_local,
             sidecar::procedure_record_local,
             sidecar::procedure_record_stop,
+            sidecar::procedure_resume,
             api::channels::channels_list,
             api::channels::channels_get,
             api::channels::channels_create,

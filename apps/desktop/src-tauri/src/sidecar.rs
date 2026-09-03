@@ -7,8 +7,8 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 
-/// Holds the child process of an in-progress local recording so `procedure_record_stop` can ask it
-/// to finish gracefully (it flushes the captured steps on stdin `stop`, unlike a hard kill).
+/// Holds the child process of an in-progress local recording or replay so `procedure_record_stop`
+/// (a `stop` line) and `procedure_resume` (a `resume` line) can talk to it over stdin.
 #[derive(Default)]
 pub struct RecordingChild(pub Mutex<Option<CommandChild>>);
 
@@ -134,6 +134,7 @@ pub async fn list_browsers(app: AppHandle) -> Result<serde_json::Value, String> 
 #[tauri::command]
 pub async fn procedure_replay_local(
     app: AppHandle,
+    child: State<'_, RecordingChild>,
     steps: serde_json::Value,
     secrets: Option<serde_json::Value>,
     start_url: Option<String>,
@@ -144,8 +145,18 @@ pub async fn procedure_replay_local(
         "secrets": secrets.unwrap_or(serde_json::json!({})),
         "startUrl": start_url,
     });
-    let v = run_task(&app, task, "procedure:local", None).await?;
+    let v = run_task(&app, task, "procedure:local", Some(&child)).await?;
     Ok(v.get("extracted").cloned().unwrap_or(serde_json::json!({})))
+}
+
+/// Tells an in-progress local routine to move past its current `humanCheckpoint` / retry a step
+/// the operator just did by hand (the sidecar reads a `resume` line on stdin). No-op if idle.
+#[tauri::command]
+pub fn procedure_resume(child: State<'_, RecordingChild>) -> Result<(), String> {
+    if let Some(c) = child.0.lock().unwrap().as_mut() {
+        c.write(b"resume\n").map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Records a routine by watching the user drive their own browser. Streams captured steps as

@@ -133,6 +133,8 @@ export const api = {
     recordLocal: (startUrl: string) =>
       invokeApi("procedure_record_local", { startUrl }, z.object({ steps: z.array(z.unknown()), startUrl: z.string() })),
     recordStopLocal: () => invokeApi("procedure_record_stop", {}, z.void()),
+    /** Move an in-progress local routine past its current humanCheckpoint / after a manual step. */
+    resumeLocal: () => invokeApi("procedure_resume", {}, z.void()),
   },
   artifacts: {
     getContent: (url: string) => invokeApi("artifacts_get_content", { url }, z.string()),

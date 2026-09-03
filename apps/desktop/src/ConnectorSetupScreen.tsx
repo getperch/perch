@@ -22,6 +22,7 @@ export function ConnectorSetupScreen({ connectorId, onDone }: { connectorId: str
   const [events, setEvents] = useState<Ev[]>([]);
   const startedRef = useRef(false);
   const routine = CONNECTOR_SETUP_ROUTINES[connectorId as keyof typeof CONNECTOR_SETUP_ROUTINES];
+  const resume = useMutation({ mutationFn: () => api.procedures.resumeLocal() });
 
   const browsers = useQuery({ queryKey: ["browsers"], queryFn: () => api.connectors.listBrowsers(), staleTime: Infinity, retry: false });
   const noBrowser = browsers.data && browsers.data.system.length === 0 && !browsers.data.bundled;
@@ -44,6 +45,9 @@ export function ConnectorSetupScreen({ connectorId, onDone }: { connectorId: str
     const un = listen<Ev>("procedure:local", (e) => setEvents((prev) => [...prev, e.payload]));
     return () => {
       void un.then((f) => f());
+      // Leaving the screen while a routine is mid-flight — tell the sidecar to stop so we don't
+      // leave an orphan browser running with no UI.
+      void api.procedures.recordStopLocal().catch(() => {});
     };
   }, []);
 
@@ -54,8 +58,12 @@ export function ConnectorSetupScreen({ connectorId, onDone }: { connectorId: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [browsers.isLoading, noBrowser, routine]);
 
-  const lastHuman = [...events].reverse().find((e): e is Extract<Ev, { t: "need_human" }> => e.t === "need_human");
   const done = run.isSuccess || run.isError;
+  const lastHumanIdx = events.map((e) => e.t).lastIndexOf("need_human");
+  const lastHuman = lastHumanIdx >= 0 ? (events[lastHumanIdx] as Extract<Ev, { t: "need_human" }>) : undefined;
+  // Hide the banner once the sidecar has acknowledged the resume (`note: "resumed"` after it).
+  const resumed = lastHumanIdx >= 0 && events.slice(lastHumanIdx + 1).some((e) => e.t === "step" && "detail" in e && e.detail === "resumed");
+  const waitingOnHuman = !!lastHuman && !resumed && !done;
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 640, margin: "0 auto", padding: "28px 24px" }}>
@@ -78,9 +86,16 @@ export function ConnectorSetupScreen({ connectorId, onDone }: { connectorId: str
         </div>
       )}
 
-      {lastHuman && !done && (
+      {waitingOnHuman && lastHuman && (
         <div style={{ marginTop: 16, padding: "12px 14px", border: "1px solid #e8cf8a", background: "#fdf6e3", borderRadius: 8, fontSize: 13, lineHeight: 1.55 }}>
-          <strong>Your turn:</strong> {lastHuman.detail}
+          <div><strong>Your turn:</strong> {lastHuman.detail}</div>
+          <button
+            onClick={() => resume.mutate()}
+            disabled={resume.isPending}
+            style={{ ...btn, marginTop: 10, background: "#0b6bcb", color: "#fff", border: "none" }}
+          >
+            {resume.isPending ? "…" : "I've done this — continue"}
+          </button>
         </div>
       )}
       {run.isError && (
