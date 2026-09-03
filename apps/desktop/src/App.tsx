@@ -234,11 +234,12 @@ function Workspace() {
     queryFn: () => api.connectors.getConnection(agentDetailMemberId!),
     enabled: !!agentDetailMemberId,
   });
-  // Resolves once the system browser is opened, not once the flow completes — the connection
-  // itself lands later via main.tsx's deep-link handler, which invalidates the query above once
-  // `perch://google-workspace-callback` comes back.
+  // Opens the system browser to Google's consent screen and resolves once the OAuth loopback
+  // completes (the Rust command runs the local 127.0.0.1 listener). Errors surface as a toast.
   const connectGoogleWorkspace = useMutation({
     mutationFn: (memberId: string) => api.connectors.beginConnect(memberId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connectors", "connection"] }),
+    onError: (err: Error) => pushToast("error", err.message || "Couldn't connect Google Workspace"),
   });
   const disconnectGoogleWorkspace = useMutation({
     mutationFn: (memberId: string) => api.connectors.disconnect(memberId),
@@ -909,8 +910,10 @@ function Workspace() {
                     instructions: draft.instructions,
                     model: draft.modelId as never,
                     tools: draft.toolNames.map((toolName) => ({ toolName, needsApproval: !!draft.toolApprovalOverrides[toolName] })),
+                    // Only the config-free trigger kinds come from these toggles; `schedule` /
+                    // `webhook` need a cron / path and are added later from Tasks → Schedules.
                     triggers: Object.entries(draft.triggerEnabled)
-                      .filter(([, on]) => on)
+                      .filter(([kind, on]) => on && (kind === "mention" || kind === "relevant"))
                       .map(([kind]) => ({ kind: kind as never, enabled: true })),
                     dailySpendCapUsd: draft.dailySpendCapUsd,
                     postsInChannelIds: draft.postsInChannelIds as never,

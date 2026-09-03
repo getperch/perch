@@ -132,9 +132,9 @@ export const api = {
      * with the captured steps when the window closes or `recordStopLocal` is called. */
     recordLocal: (startUrl: string) =>
       invokeApi("procedure_record_local", { startUrl }, z.object({ steps: z.array(z.unknown()), startUrl: z.string() })),
-    recordStopLocal: () => invokeApi("procedure_record_stop", {}, z.void()),
+    recordStopLocal: () => invokeApi("procedure_record_stop", {}, z.unknown()),
     /** Move an in-progress local routine past its current humanCheckpoint / after a manual step. */
-    resumeLocal: () => invokeApi("procedure_resume", {}, z.void()),
+    resumeLocal: () => invokeApi("procedure_resume", {}, z.unknown()),
   },
   artifacts: {
     getContent: (url: string) => invokeApi("artifacts_get_content", { url }, z.string()),
@@ -153,12 +153,9 @@ export const api = {
     listBrowsers: () => invokeApi("list_browsers", {}, z.object({ system: z.array(z.string()), bundled: z.boolean() })),
 
     /** Per-agent Google Workspace connect flow — opens the system browser to Google's consent
-     * screen for `memberId`; resolves once the browser is opened, not once the flow completes
-     * (see `completeConnect`, driven by the `perch://google-workspace-callback` deep link). */
-    beginConnect: (memberId: string) => invokeApi("begin_google_connect", { memberId }, z.void()),
-    /** Finishes the flow once the deep link routes back into the app (see main.tsx) — the Rust
-     * side does the token exchange with the backend and returns the connected email. */
-    completeConnect: (callbackUrl: string) => invokeApi("complete_google_connect", { callbackUrl }, connectors.connectOutput),
+     * screen for `memberId` and resolves with the connected account once the OAuth loopback
+     * completes (the Rust command runs a local `http://127.0.0.1` listener; see google_workspace.rs). */
+    beginConnect: (memberId: string) => invokeApi("begin_google_connect", { memberId }, connectors.connectOutput),
     getConnection: (memberId: string) => invokeApi("google_workspace_get_connection", { memberId }, connectors.getConnectionOutput),
     disconnect: (memberId: string) => invokeApi("disconnect_google_workspace", { memberId }, connectors.disconnectOutput),
   },

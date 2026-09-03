@@ -6,8 +6,6 @@ import { App } from "./App.js";
 import { ConnectScreen } from "./ConnectScreen.js";
 import { loadStoredBackendConfig, saveBackendConfig, type BackendConfig } from "./lib/backend-config-store.js";
 import { completeSignIn } from "./lib/auth.js";
-import { api } from "./lib/api-client.js";
-import { pushToast } from "./lib/toasts.js";
 import "@perch/ui/src/global.css";
 
 function Root() {
@@ -41,24 +39,11 @@ function Providers({ config }: { config: BackendConfig }) {
   useEffect(() => {
     setReady(true);
 
-    // Two independent deep-link flows share the app-wide `perch://` scheme (registered once in
-    // tauri.conf.json, not path-scoped) — branch on the callback URL's host to route each to its
-    // own completion command. `perch://callback` is this app's own sign-in (auth.rs);
-    // `perch://google-workspace-callback` is a per-agent Google Workspace connect
-    // (google_workspace.rs) started from AgentDetailScreen's "Connect Gmail & Calendar" button.
+    // `perch://callback` is this app's own sign-in (auth.rs). The Google Workspace connect flow
+    // no longer uses a deep link — it runs an OAuth loopback listener inside `begin_google_connect`.
+    // Errors here are swallowed: if the exchange fails, the sign-in screen stays on "Waiting for
+    // browser…" — use its "paste the callback URL" fallback to see the real error.
     const routeCallback = (url: string) => {
-      if (url.startsWith("perch://google-workspace-callback")) {
-        // Errors here surface as a toast rather than being swallowed the way completeSignIn's
-        // are below — there's no "paste the callback URL" fallback screen for this flow, so a
-        // silent failure would just look like the Connect button did nothing.
-        api.connectors
-          .completeConnect(url)
-          .then(() => queryClient.invalidateQueries({ queryKey: ["connectors", "connection"] }))
-          .catch((err: Error) => pushToast("error", err.message || "Couldn't connect Google Workspace"));
-        return;
-      }
-      // Errors here are swallowed: if the exchange fails, the sign-in screen just stays on
-      // "Waiting for browser…" — use its "paste the callback URL" fallback to see the real error.
       completeSignIn(url).catch(() => {});
     };
 

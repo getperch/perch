@@ -425,20 +425,10 @@ export function AddMemberScreen({
                   on={agentDraft.triggerEnabled.relevant ?? false}
                   onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, relevant: !d.triggerEnabled.relevant } }))}
                 />
-                <TriggerRow
-                  glyph="⏱"
-                  title="On a schedule"
-                  sub="Runs on a cron schedule you set"
-                  on={agentDraft.triggerEnabled.schedule ?? false}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, schedule: !d.triggerEnabled.schedule } }))}
-                />
-                <TriggerRow
-                  glyph="⚡"
-                  title="On webhook"
-                  sub="Runs when an external system calls its webhook"
-                  on={agentDraft.triggerEnabled.webhook ?? false}
-                  onClick={() => setAgentDraft((d) => ({ ...d, triggerEnabled: { ...d.triggerEnabled, webhook: !d.triggerEnabled.webhook } }))}
-                />
+              </div>
+              <div style={{ fontSize: 12, color: color.muted, lineHeight: 1.5, marginTop: 8 }}>
+                Scheduled and webhook triggers are set up per agent from <strong>Tasks → Schedules</strong>
+                once the agent exists (a schedule needs a time and a prompt).
               </div>
             </Card>
           </div>

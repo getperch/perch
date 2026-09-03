@@ -183,11 +183,12 @@ fabricated connection — until the manual setup below is done.
    admin needs to add the Google OAuth client in Settings → Integrations" error rather than
    crashing or pretending to work — see `services/api/src/google-oauth.ts`'s
    `requireGoogleOAuthClient`.
-5. No redirect URI needs registering in Google Cloud Console's credential config for a Desktop
-   app OAuth client — Google allows `http://localhost`/custom-scheme redirects for that client
-   type without an allowlist. The redirect used here is `perch://google-workspace-callback`,
-   handled by the `perch://` scheme already registered app-wide in
-   `apps/desktop/src-tauri/tauri.conf.json`.
+5. No redirect URI needs registering for a Desktop app OAuth client — Google allows
+   `http://127.0.0.1:<port>` / `http://localhost:<port>` **loopback** redirects for that client
+   type without an allowlist. The desktop connect flow (`apps/desktop/src-tauri/src/google_workspace.rs`)
+   binds a throwaway `127.0.0.1` listener per attempt and uses that as the `redirect_uri`.
+   (Custom URI schemes like `perch://…` are **not** accepted for Desktop clients — Google returns
+   `Error 400: invalid_request`; they're only for iOS/Android client types.)
 
 **Not yet verified** (flagged the same way as the other integrations below): the real Google
 token/userinfo endpoints haven't been exercised against a live OAuth client — the request/response

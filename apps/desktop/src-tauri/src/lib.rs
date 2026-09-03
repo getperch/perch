@@ -30,14 +30,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(http_client)
         .manage(auth::PendingVerifier::default())
-        .manage(google_workspace::PendingGoogleVerifier::default())
         .manage(stream::Subscriptions::default())
         .manage(sidecar::RecordingChild::default())
         .invoke_handler(tauri::generate_handler![
             auth::begin_sign_in,
             auth::complete_sign_in,
             google_workspace::begin_google_connect,
-            google_workspace::complete_google_connect,
             google_workspace::disconnect_google_workspace,
             api::connectors::google_workspace_get_connection,
             api::connectors::connector_list,
