@@ -52,10 +52,6 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bus"
     }
-    "ProcedureRecorder": {
-      "name": string
-      "type": "sst.aws.Function"
-    }
     "ProcedureScheduler": {
       "name": string
       "type": "sst.aws.Function"

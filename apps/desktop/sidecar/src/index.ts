@@ -41,7 +41,7 @@
 }
 
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
-type Browser = import("playwright-core").Browser;
+type BrowserContext = import("playwright-core").BrowserContext;
 type Page = import("playwright-core").Page;
 type Locator = import("playwright-core").Locator;
 
@@ -77,22 +77,40 @@ async function detectBrowsers(): Promise<{ system: string[]; bundled: boolean }>
   return { system, bundled };
 }
 
-async function launchBrowser(): Promise<Browser> {
+// Launch as a *persistent context* (a real, reused profile dir) with the automation tells removed:
+//  - `ignoreDefaultArgs: ["--enable-automation"]` drops Chrome's automation banner + the flag
+//    Google keys off.
+//  - `--disable-blink-features=AutomationControlled` makes `navigator.webdriver` return false.
+//  - a persisted profile means the user signs into Google once; after that there's a real session
+//    with cookies/history, which is what gets past "this browser may not be secure".
+const LAUNCH_ARGS = ["--start-maximized", "--disable-blink-features=AutomationControlled"];
+const IGNORE_ARGS = ["--enable-automation"];
+// Extra belt-and-suspenders: nuke the residual `navigator.webdriver` getter in every page.
+const HIDE_WEBDRIVER = "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});";
+
+async function launchContext(): Promise<{ ctx: BrowserContext; page: Page }> {
+  const userDataDir = process.env.PERCH_PROFILE_DIR || require("node:path").join(require("node:os").tmpdir(), "perch-browser-profile");
   const preferred = process.env.PERCH_BROWSER_CHANNEL;
   const order = preferred ? [preferred, ...CHANNELS.filter((c) => c !== preferred)] : CHANNELS;
+  const opts = { headless: false, viewport: null, args: LAUNCH_ARGS, ignoreDefaultArgs: IGNORE_ARGS } as const;
+
+  const tryOpen = async (channel?: string) => {
+    const ctx = await chromium.launchPersistentContext(userDataDir, channel ? { ...opts, channel } : opts);
+    await ctx.addInitScript(HIDE_WEBDRIVER);
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    step("note", `launched ${channel ?? "bundled Chromium"}`);
+    return { ctx, page };
+  };
+
   for (const channel of order) {
     try {
-      const browser = await chromium.launch({ channel, headless: false, args: ["--start-maximized"] });
-      step("note", `launched ${channel}`);
-      return browser;
+      return await tryOpen(channel);
     } catch {
       /* try next */
     }
   }
   try {
-    const browser = await chromium.launch({ headless: false, args: ["--start-maximized"] });
-    step("note", "launched bundled Chromium");
-    return browser;
+    return await tryOpen();
   } catch {
     throw new Error("No usable browser found — install Google Chrome or Microsoft Edge.");
   }
@@ -295,7 +313,7 @@ async function record(page: Page, task: { startUrl: string }): Promise<void> {
   // End on: browser/page closed, or a `{"cmd":"stop"}` line on stdin.
   await new Promise<void>((resolve) => {
     page.on("close", () => resolve());
-    page.context().browser()?.on("disconnected", () => resolve());
+    page.context().on("close", () => resolve());
     process.stdin.setEncoding("utf8");
     let buf = "";
     process.stdin.on("data", (d) => {
@@ -327,26 +345,25 @@ async function record(page: Page, task: { startUrl: string }): Promise<void> {
     }
   }
 
-  let browser: Browser | undefined;
+  let ctx: BrowserContext | undefined;
   try {
-    browser = await launchBrowser();
-    const context = await browser.newContext({ viewport: null });
-    const page = await context.newPage();
+    const opened = await launchContext();
+    ctx = opened.ctx;
 
     if (task.task === "replay") {
-      await replay(page, task as never);
+      await replay(opened.page, task as never);
     } else if (task.task === "record") {
-      await record(page, task as never);
+      await record(opened.page, task as never);
     } else {
       throw new Error(`unknown task "${String(task.task)}"`);
     }
 
     emit({ t: "done" });
-    await browser.close().catch(() => {});
+    await ctx.close().catch(() => {});
     process.exit(0);
   } catch (err) {
     emit({ t: "error", detail: err instanceof Error ? err.message : String(err) });
-    await browser?.close().catch(() => {});
+    await ctx?.close().catch(() => {});
     process.exit(1);
   }
 })();

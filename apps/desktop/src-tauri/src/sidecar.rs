@@ -17,11 +17,19 @@ pub struct RecordingChild(pub Mutex<Option<CommandChild>>);
 /// built script through a system `node` (dev builds without the binary). The task JSON arg is
 /// appended by the caller.
 fn sidecar_command(app: &AppHandle) -> Result<Command, String> {
-    if let Ok(cmd) = app.shell().sidecar("perch-sidecar") {
-        return Ok(cmd);
+    let cmd = match app.shell().sidecar("perch-sidecar") {
+        Ok(c) => c,
+        Err(_) => {
+            let script = sidecar_script(app)?;
+            app.shell().command("node").arg(script.to_string_lossy().to_string())
+        }
+    };
+    // Persisted browser profile: sign into Google once, keep the session. Lives in the app's data
+    // dir so it survives across runs (and isn't the user's real Chrome profile).
+    if let Ok(dir) = app.path().app_data_dir() {
+        return Ok(cmd.env("PERCH_PROFILE_DIR", dir.join("browser-profile").to_string_lossy().to_string()));
     }
-    let script = sidecar_script(app)?;
-    Ok(app.shell().command("node").arg(script.to_string_lossy().to_string()))
+    Ok(cmd)
 }
 
 fn sidecar_script(app: &AppHandle) -> Result<PathBuf, String> {
