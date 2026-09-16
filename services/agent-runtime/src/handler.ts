@@ -17,6 +17,17 @@ export { sanitizeRunError };
 
 export type AgentRunEvent = AgentMessageRunEvent | ProcedureRunEvent | ScheduledRunEvent;
 
+/**
+ * Information about other agents in the channel for coordination.
+ * Passed from the API layer to enable multi-agent collaboration.
+ */
+export type OtherAgentInfo = {
+  id: string;
+  name: string;
+  handle: string;
+  roleDescription: string;
+};
+
 export type AgentMessageRunEvent = {
   /** absent on the message path (the original shape); `"procedure"` routes to replay instead */
   kind?: "message";
@@ -45,6 +56,10 @@ export type AgentMessageRunEvent = {
    * absent (defensive — every real caller sets it) so this stays optional rather than a breaking
    * change to the event shape. */
   runId?: string;
+  /** IDs of other agents in the channel for coordination */
+  otherAgentIds?: string[];
+  /** Details about other agents to enable task delegation and coordination */
+  otherAgentsInfo?: OtherAgentInfo[];
 };
 
 /** A short system-prompt block describing the channel the agent is working in, so a channel's
@@ -54,6 +69,21 @@ function channelContext(event: AgentMessageRunEvent): string {
   const parts = [name, event.channelTopic?.trim() || undefined].filter(Boolean);
   if (parts.length === 0) return "";
   return `\n\n## The channel you're in\n${parts.join(" — ")}\nKeep your replies relevant to this channel's purpose.`;
+}
+
+/**
+ * Build a system-prompt section describing other agents in the channel.
+ * This enables multi-agent coordination by letting agents know:
+ * - Who else is available to help
+ * - What their roles are
+ * - When to delegate vs handle tasks themselves
+ */
+function otherAgentsContext(otherAgents?: OtherAgentInfo[]): string {
+  if (!otherAgents || otherAgents.length === 0) return "";
+
+  const agentList = otherAgents.map((a) => `- @${a.handle}: ${a.name} — ${a.roleDescription}`).join("\n");
+
+  return `\n\n## Other agents in this channel\n${agentList}\n\nYou can @mention other agents to delegate tasks that match their expertise, collaborate on complex requests, or ask for help when their capabilities are more relevant than yours. When delegating, be specific about what you need them to do.`;
 }
 
 /**
@@ -99,7 +129,7 @@ export const handler: ReturnType<typeof workflow.handler> = workflow.handler(asy
 
   if (event.mode === "triage") {
     const relevant = await ctx.step("triage-relevance", async () => {
-      const triageAgent = new Agent({ tools: [], model: resolveModel(agent.config.model), systemPrompt: `${agent.config.instructions}${channelContext(event)}` });
+      const triageAgent = new Agent({ tools: [], model: resolveModel(agent.config.model), systemPrompt: `${agent.config.instructions}${channelContext(event)}${otherAgentsContext(event.otherAgentsInfo)}` });
       const verdict = await triageAgent.invoke(
         `A new message was posted in a channel you're in, without @mentioning anyone specifically:\n\n"${event.prompt}"\n\nBased solely on your role, should you respond to it? Reply with exactly one word: YES or NO.`,
       );
@@ -183,10 +213,14 @@ export const handler: ReturnType<typeof workflow.handler> = workflow.handler(asy
     // afternoon". The current time is folded into the prompt right here (not baked into the
     // tool's static description) so it's always fresh for whichever turn is actually running.
     const reminderTool = makeCreateReminderTool({ workspaceId: event.workspaceId, agentId: agent.id, channelId: event.channelId });
+
+    // Build the complete system prompt with multi-agent coordination context
+    const baseSystemPrompt = `${agent.config.instructions}${channelContext(event)}${otherAgentsContext(event.otherAgentsInfo)}\n\nThe current date/time is ${new Date().toISOString()} (UTC).\n\n${CONCISENESS_INSTRUCTIONS}${toolInstructions}${skillInstructions}${uiEnabled ? `\n\n${A2UI_INSTRUCTIONS}` : ""}`;
+
     strandsAgent = new Agent({
       tools: [...mcpTools, reminderTool, ...(uiEnabled ? [makeRenderUiTool(run)] : [])],
       model: resolveModel(agent.config.model),
-      systemPrompt: `${agent.config.instructions}${channelContext(event)}\n\nThe current date/time is ${new Date().toISOString()} (UTC).\n\n${CONCISENESS_INSTRUCTIONS}${toolInstructions}${skillInstructions}${uiEnabled ? `\n\n${A2UI_INSTRUCTIONS}` : ""}`,
+      systemPrompt: baseSystemPrompt,
       interventions: [approvalHandler],
       ...memory,
     });

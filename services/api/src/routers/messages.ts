@@ -28,7 +28,7 @@ messagesApp.openapi(
       params: z.object({ channelId }),
       query: z.object({ cursor: z.string().optional(), limit: z.coerce.number().int().positive().max(200).optional() }),
     },
-    responses: { 200: { content: { "application/json": { schema: contract.listMessagesOutput } }, description: "OK" } },
+    responses: { 200: { content: { "application/json": { schema: contract.listMessagesOutput } }, description: "OK" } } },
   }),
   async (c) => {
     const { channelId: id } = c.req.valid("param");
@@ -63,7 +63,7 @@ messagesApp.openapi(
       params: z.object({ channelId }),
       body: { content: { "application/json": { schema: contract.sendMessageInput.omit({ channelId: true }) } } },
     },
-    responses: { 200: { content: { "application/json": { schema: contract.sendMessageOutput } }, description: "OK" } },
+    responses: { 200: { content: { "application/json": { schema: contract.sendMessageOutput } }, description: "OK" } } },
   }),
   async (c) => {
     const { channelId: id } = c.req.valid("param");
@@ -97,15 +97,17 @@ messagesApp.openapi(
     ]);
     const channel = channelRes.Item?.channel;
     const channelMemberIds: string[] = channel?.memberIds ?? [];
-    const agentMembers = (membersRes.Items ?? [])
-      .map((i) => i.member as Member)
-      .filter((m): m is Extract<Member, { kind: "agent" }> => m.kind === "agent" && channelMemberIds.includes(m.id));
+    const allMembers = (membersRes.Items ?? []).map((i) => i.member as Member);
+    const agentMembers = allMembers.filter((m): m is Extract<Member, { kind: "agent" }> => m.kind === "agent" && channelMemberIds.includes(m.id));
 
     // Only trust an @token as a real agent mention if it matches an actual agent's handle in
     // this channel — otherwise (a person's @mention, a typo, or no mention at all) the message
     // falls through to auto-triage below instead of firing a doomed invoke for a bogus handle.
     const mentionedTokens = [...input.text.matchAll(/@(\w[\w-]*)/g)].map((m) => m[1]);
-    const mentionedAgent = agentMembers.find((a) => mentionedTokens.includes(a.handle));
+    // FIX: Use filter to get ALL mentioned agents, not just the first one.
+    // This fixes multi-agent coordination where multiple agents may be @mentioned together.
+    const mentionedAgents = agentMembers.filter((a) => mentionedTokens.includes(a.handle));
+    const mentionedAgentIds = new Set(mentionedAgents.map((a) => a.id));
 
     if (channel?.kind === "direct") {
       // A direct/group-DM channel's membership is fixed at creation via the @mention tagging
@@ -129,43 +131,65 @@ messagesApp.openapi(
               channelName: channel?.name,
               channelTopic: channel?.topic,
               prompt: input.text,
+              // FIX: Include information about other agents in the channel for coordination
+              otherAgentIds: agentMembers.filter((a) => a.id !== agent.id).map((a) => a.id),
+              otherAgentsInfo: agentMembers.filter((a) => a.id !== agent.id).map((a) => ({
+                id: a.id,
+                name: a.name,
+                handle: a.handle,
+                roleDescription: a.roleDescription,
+              })),
               runId,
             },
           });
           await recordExecutionArn(ctx.workspaceId, runId, started.arn);
         }),
       );
-    } else if (input.assigneeId || mentionedAgent) {
-      // Someone was specifically tagged — the actual multi-step reasoning loop lives in
-      // services/agent-runtime, started async so this request returns immediately. Named
-      // (message, agent) so a retried start resumes the same execution instead of double-running
-      // the agent.
-      const directAgentId = (input.assigneeId ?? mentionedAgent?.id)!;
-      const directRunId = ulid();
-      const directStarted = await workflow.start(Resource.AgentRuntime, {
-        name: `${message.id}-${directAgentId}`,
-        payload: {
-          workspaceId: ctx.workspaceId,
-          channelId: id,
-          messageId: message.id,
-          mode: "direct",
-          agentId: directAgentId,
-          triggeredBy: input.assigneeId ? "assign" : `@${mentionedAgent?.handle}`,
-          actorId: ctx.actorId,
-          channelName: channel?.name,
-          channelTopic: channel?.topic,
-          prompt: input.text,
-          runId: directRunId,
-        },
-      });
-      await recordExecutionArn(ctx.workspaceId, directRunId, directStarted.arn);
+    } else if (input.assigneeId || mentionedAgents.length > 0) {
+      // FIX: Handle multiple @mentioned agents by triggering ALL of them, not just the first.
+      // Previously used .find() which only returned the first match - this broke multi-agent coordination.
+      const directAgentIds = input.assigneeId ? [input.assigneeId] : mentionedAgents.map((a) => a.id);
+      const uniqueDirectAgentIds = [...new Set(directAgentIds)];
+
+      await Promise.all(
+        uniqueDirectAgentIds.map(async (directAgentId) => {
+          const directAgent = agentMembers.find((a) => a.id === directAgentId);
+          const directRunId = ulid();
+          const directStarted = await workflow.start(Resource.AgentRuntime, {
+            name: `${message.id}-${directAgentId}`,
+            payload: {
+              workspaceId: ctx.workspaceId,
+              channelId: id,
+              messageId: message.id,
+              mode: "direct",
+              agentId: directAgentId,
+              triggeredBy: input.assigneeId ? "assign" : `@${directAgent?.handle ?? "mention"}`,
+              actorId: ctx.actorId,
+              channelName: channel?.name,
+              channelTopic: channel?.topic,
+              prompt: input.text,
+              // FIX: Include information about other agents in the channel for coordination
+              otherAgentIds: agentMembers.filter((a) => a.id !== directAgentId).map((a) => a.id),
+              otherAgentsInfo: agentMembers.filter((a) => a.id !== directAgentId).map((a) => ({
+                id: a.id,
+                name: a.name,
+                handle: a.handle,
+                roleDescription: a.roleDescription,
+              })),
+              runId: directRunId,
+            },
+          });
+          await recordExecutionArn(ctx.workspaceId, directRunId, directStarted.arn);
+        }),
+      );
     } else {
       // No explicit tag — every agent in the channel with the "relevant" trigger enabled
       // independently judges whether it's relevant to their own role (see
       // services/agent-runtime/src/handler.ts's triage step) and reacts if so, rather than one
       // dispatcher picking a single "best" agent.
+      // FIX: Exclude agents that were already triggered via mention from triage to avoid duplicate runs.
       const triageAgents = agentMembers.filter(
-        (a) => a.id !== ctx.actorId && a.config.triggers.some((t) => t.kind === "relevant" && t.enabled),
+        (a) => a.id !== ctx.actorId && !mentionedAgentIds.has(a.id) && a.config.triggers.some((t) => t.kind === "relevant" && t.enabled),
       );
       await Promise.all(
         triageAgents.map(async (agent) => {
@@ -183,6 +207,14 @@ messagesApp.openapi(
               channelName: channel?.name,
               channelTopic: channel?.topic,
               prompt: input.text,
+              // FIX: Include information about other agents in the channel for coordination
+              otherAgentIds: agentMembers.filter((a) => a.id !== agent.id).map((a) => a.id),
+              otherAgentsInfo: agentMembers.filter((a) => a.id !== agent.id).map((a) => ({
+                id: a.id,
+                name: a.name,
+                handle: a.handle,
+                roleDescription: a.roleDescription,
+              })),
               runId,
             },
           });
@@ -211,7 +243,7 @@ messagesApp.openapi(
       params: z.object({ channelId }),
       body: { content: { "application/json": { schema: contract.a2uiActionInput.omit({ channelId: true }) } } },
     },
-    responses: { 200: { content: { "application/json": { schema: contract.a2uiActionOutput } }, description: "OK" } },
+    responses: { 200: { content: { "application/json": { schema: contract.a2uiActionOutput } }, description: "OK" } } },
   }),
   async (c) => {
     const ctx = ctxOf(c);
@@ -260,6 +292,19 @@ messagesApp.openapi(
     const agent = agentRes.Item?.member as Member | undefined;
     if (!agent || agent.kind !== "agent") throw new HTTPException(400, { message: "the card's author is not an agent" });
 
+    // FIX: Load other agents in the channel for coordination context
+    const membersRes = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: "pk = :pk and begins_with(sk, :prefix)",
+        ExpressionAttributeValues: { ":pk": `WORKSPACE#${ctx.workspaceId}`, ":prefix": "MEMBER#" },
+      }),
+    );
+    const channelMemberIds: string[] = channel?.memberIds ?? [];
+    const otherAgents = (membersRes.Items ?? [])
+      .map((i) => i.member as Member)
+      .filter((m): m is Extract<Member, { kind: "agent" }> => m.kind === "agent" && channelMemberIds.includes(m.id) && m.id !== agent.id);
+
     const detail = [
       value ? `value=${value}` : undefined,
       ...orderedFields.map((f) => `${f.name}: ${f.value}`),
@@ -296,6 +341,14 @@ messagesApp.openapi(
         channelName: channel?.name,
         channelTopic: channel?.topic,
         prompt,
+        // FIX: Include other agents info for coordination
+        otherAgentIds: otherAgents.map((a) => a.id),
+        otherAgentsInfo: otherAgents.map((a) => ({
+          id: a.id,
+          name: a.name,
+          handle: a.handle,
+          roleDescription: a.roleDescription,
+        })),
         runId: a2uiRunId,
       },
     });
@@ -321,7 +374,7 @@ messagesApp.openapi(
       params: z.object({ channelId, messageId }),
       body: { content: { "application/json": { schema: contract.toggleReactionInput.omit({ channelId: true, messageId: true }) } } },
     },
-    responses: { 200: { content: { "application/json": { schema: contract.toggleReactionOutput } }, description: "OK" } },
+    responses: { 200: { content: { "application/json": { schema: contract.toggleReactionOutput } }, description: "OK" } } },
   }),
   async (c) => {
     const ctx = ctxOf(c);
@@ -372,7 +425,7 @@ messagesApp.openapi(
       params: z.object({ channelId, messageId }),
       body: { content: { "application/json": { schema: contract.editMessageInput.omit({ channelId: true, messageId: true }) } } },
     },
-    responses: { 200: { content: { "application/json": { schema: contract.editMessageOutput } }, description: "OK" } },
+    responses: { 200: { content: { "application/json": { schema: contract.editMessageOutput } }, description: "OK" } } },
   }),
   async (c) => {
     const ctx = ctxOf(c);
@@ -394,7 +447,7 @@ messagesApp.openapi(
     method: "delete",
     path: "/{channelId}/messages/{messageId}",
     request: { params: z.object({ channelId, messageId }) },
-    responses: { 200: { content: { "application/json": { schema: contract.deleteMessageOutput } }, description: "OK" } },
+    responses: { 200: { content: { "application/json": { schema: contract.deleteMessageOutput } }, description: "OK" } } },
   }),
   async (c) => {
     const ctx = ctxOf(c);

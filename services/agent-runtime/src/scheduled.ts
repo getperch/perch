@@ -1,4 +1,4 @@
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
 import { Agent, SessionManager } from "@strands-agents/sdk";
 import type { workflow } from "sst/aws/workflow";
@@ -13,14 +13,15 @@ import { resolveGrantedTools } from "./mcp-gateways.js";
 import { ApprovalInterventionHandler } from "./tools.js";
 import { A2UI_INSTRUCTIONS, makeRenderUiTool } from "./a2ui.js";
 import { sanitizeRunError } from "./sanitize.js";
+import type { Member } from "@perch/core";
 
 /**
  * A scheduled agent run — a `{kind:"schedule"}` trigger on an agent's config firing, either on its
- * cron (via the scheduler Lambda) or from the Schedules list's "Run now". Unlike the message path
- * in handler.ts there's no triggering message to react to and no triage step: it just runs the
- * assigned agent's reasoning loop against the trigger's standing `prompt`, reusing that agent's
- * exact tool grants and model, and posts the answer to `channelId` (a named channel or a 1:1 DM,
- * already resolved by the API — see services/api/src/schedule-support.ts).
+ * cron (via the scheduler Lambda) or from "Run now". Unlike the message path in handler.ts there's
+ * no triggering message to react to and no triage step: it just runs the assigned agent's reasoning
+ * loop against the trigger's standing `prompt`, reusing that agent's exact tool grants and model,
+ * and posts the answer to `channelId` (a named channel or a 1:1 DM, already resolved by the API —
+ * see services/api/src/schedule-support.ts).
  */
 export type ScheduledRunEvent = {
   kind: "scheduled";
@@ -87,6 +88,42 @@ async function mentionPrefixFor(workspaceId: string, memberId: string | undefine
   return name ? `@${personToken(name)} ` : "";
 }
 
+/**
+ * Build a system-prompt section describing other agents in the channel.
+ * For scheduled runs, this helps the agent understand who else might be available
+ * for collaboration when it posts results or needs assistance.
+ */
+async function getOtherAgentsContext(workspaceId: string, channelId: string, currentAgentId: string): Promise<string> {
+  try {
+    // Load channel to get memberIds
+    const channelRes = await ddb.send(new GetCommand({ TableName: TABLE_NAME, Key: { pk: `WORKSPACE#${workspaceId}`, sk: `CHANNEL#${channelId}` } }));
+    const channelMemberIds: string[] = channelRes.Item?.channel?.memberIds ?? [];
+
+    // Load all members to filter for agents
+    const membersRes = await ddb.send(new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: "pk = :pk and begins_with(sk, :prefix)",
+      ExpressionAttributeValues: { ":pk": `WORKSPACE#${workspaceId}`, ":prefix": "MEMBER#" },
+    }));
+
+    const agentMembers = (membersRes.Items ?? [])
+      .map((i) => i.member as Member)
+      .filter((m): m is Extract<Member, { kind: "agent" }> =>
+        m.kind === "agent" && channelMemberIds.includes(m.id) && m.id !== currentAgentId
+      );
+
+    if (agentMembers.length === 0) return "";
+
+    const agentList = agentMembers.map((a) => `- @${a.handle}: ${a.name} — ${a.roleDescription}`).join("\n");
+
+    return `\n\n## Other agents in this channel\n${agentList}\n\nYou can @mention other agents if you need their expertise or want to collaborate.`;
+  } catch (err) {
+    // Best-effort: don't fail the run if we can't load other agent info
+    console.error("scheduled: failed to load other agents context:", err instanceof Error ? err.message : err);
+    return "";
+  }
+}
+
 export async function runScheduled(event: ScheduledRunEvent, ctx: workflow.Context): Promise<{ runId: string; skipped?: true }> {
   const agent = await ctx.step("load-agent-config", () => loadAgentConfig(event.workspaceId, event.agentId));
 
@@ -112,6 +149,11 @@ export async function runScheduled(event: ScheduledRunEvent, ctx: workflow.Conte
       triggeredBy: event.triggeredBy,
       runId: event.runId,
     }),
+  );
+
+  // Load other agents for coordination context
+  const otherAgentsContext = await ctx.step("load-other-agents", () =>
+    getOtherAgentsContext(event.workspaceId, event.channelId, event.agentId)
   );
 
   let strandsAgent: Agent | undefined;
@@ -158,10 +200,14 @@ export async function runScheduled(event: ScheduledRunEvent, ctx: workflow.Conte
     // `render_ui` — same standard UI-rendering capability the interactive path gets, subject to the
     // same `config.ui.enabled` switch (see handler.ts and services/agent-runtime/src/a2ui.ts).
     const uiEnabled = agent.config.ui?.enabled !== false;
+
+    // Build system prompt with multi-agent coordination context
+    const systemPrompt = `${agent.config.instructions}${otherAgentsContext}\n\n${CONCISENESS_INSTRUCTIONS}${toolInstructions}${skillInstructions}${uiEnabled ? `\n\n${A2UI_INSTRUCTIONS}` : ""}`;
+
     strandsAgent = new Agent({
       tools: uiEnabled ? [...mcpTools, makeRenderUiTool(run)] : mcpTools,
       model: resolveModel(agent.config.model),
-      systemPrompt: `${agent.config.instructions}\n\n${CONCISENESS_INSTRUCTIONS}${toolInstructions}${skillInstructions}${uiEnabled ? `\n\n${A2UI_INSTRUCTIONS}` : ""}`,
+      systemPrompt,
       interventions: [approvalHandler],
       ...memory,
     });
